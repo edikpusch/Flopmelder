@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNav } from '../NavContext.jsx'
 import { getMeldung, saveMeldung, getFilialen, getArtikel } from '../store.js'
 
@@ -64,6 +64,15 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     })
     return initial
   })
+  const [pendingFocusId, setPendingFocusId] = useState(null)
+  const mhdRefs = useRef({})
+
+  useEffect(() => {
+    if (pendingFocusId == null) return
+    const el = mhdRefs.current[pendingFocusId]
+    if (el) el.focus()
+    setPendingFocusId(null)
+  }, [pendingFocusId])
 
   if (!meldung) {
     return (
@@ -95,6 +104,7 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
 
   function setMenge(artikelId, menge) {
     updateEintrag(artikelId, { menge })
+    if (menge > 0) setPendingFocusId(artikelId)
   }
 
   function setMhd(artikelId, mhd) {
@@ -217,6 +227,9 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
             {mengeSichtbar && (
               <div className="mhd-row">
                 <input
+                  ref={(el) => {
+                    mhdRefs.current[a.id] = el
+                  }}
                   type="text"
                   inputMode="numeric"
                   placeholder={getMhdModus(a.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
