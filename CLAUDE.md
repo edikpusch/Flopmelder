@@ -72,10 +72,22 @@ Filiale") und den `eintraege` abgeleitet:
 - `fertig`: `filialeStatus[filialeId] === 'fertig'`
 
 ### MHD-Feld
-Roh-String wird exakt wie eingegeben gespeichert (kein Umformatieren). Der native
-Datepicker-Button dient nur als Eingabehilfe und schreibt `TT.MM.JJJJ` ins Textfeld.
 Erlaubte Formate: `TT.MM.JJJJ`, `TT.MM.JJ`, `MM.JJJJ`, `MM.JJ` – **nie** als echtes Datum
-interpretieren.
+interpretieren, immer als Roh-String speichern.
+
+**Auto-Formatierung beim Tippen** (`FilialeErfassungScreen.jsx`): Da `TT.MM.JJ` und
+`MM.JJJJ` bei gleicher Ziffernanzahl (6) nicht automatisch unterscheidbar sind, gibt es
+pro Artikel-Zeile einen Modus-Umschalter ("Tag" / "Monat"):
+- `tag`-Modus: Zifferngruppen `[2,2,4]` → `TT.MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
+- `monat`-Modus: Zifferngruppen `[2,4]` → `MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
+- `formatMhdDigits(digits, modus)` setzt den Punkt automatisch, sobald ein Ziffernblock
+  voll ist (eager masking, wie ein Kreditkarten-Ablaufdatum-Feld)
+- Backspace wird per `onKeyDown` abgefangen und entfernt die letzte **Ziffer** (nicht nur
+  das letzte Zeichen), sonst „hängt“ das Löschen an einem automatisch gesetzten Punkt
+- Der Modus wird beim Laden aus der gespeicherten Punktanzahl abgeleitet
+  (`mhdModusAusWert`: 1 Punkt → `monat`, sonst `tag`) – wichtig bei Änderungen an dieser
+  Logik, damit alte Erfassungen beim erneuten Öffnen nicht falsch gruppiert werden
+- Der native Datepicker-Button setzt den Modus immer auf `tag` zurück (liefert volles Datum)
 
 ### Menge
 Tap-Buttons `0 / 0,5 / 1 / 1,5 / 2 / +`. Der `+`-Button öffnet ein kleines Zahlenfeld für

@@ -20,6 +20,35 @@ function dateInputToDE(value) {
   return `${d}.${m}.${y}`
 }
 
+// Ziffern-Gruppierung je MHD-Modus: 'tag' = TT.MM.JJJJ, 'monat' = MM.JJJJ
+const MHD_GROUPS = { tag: [2, 2, 4], monat: [2, 4] }
+const MHD_MAX_DIGITS = { tag: 8, monat: 6 }
+
+function digitsOnly(str) {
+  return (str || '').replace(/\D/g, '')
+}
+
+// Setzt beim Tippen automatisch Punkte, sobald ein Ziffernblock voll ist
+// (z.B. "15062026" -> "15.06.2026", "0826" -> "08.26")
+function formatMhdDigits(digits, modus) {
+  const groups = MHD_GROUPS[modus]
+  const teile = []
+  let idx = 0
+  for (const size of groups) {
+    const chunk = digits.slice(idx, idx + size)
+    if (!chunk) break
+    teile.push(chunk)
+    idx += size
+    if (idx >= digits.length) break
+  }
+  return teile.join('.')
+}
+
+function mhdModusAusWert(mhd) {
+  const punkte = (mhd.match(/\./g) || []).length
+  return punkte === 1 ? 'monat' : 'tag'
+}
+
 export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
@@ -27,6 +56,14 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const artikelListe = getArtikel()
   const [customEditId, setCustomEditId] = useState(null)
   const [customValue, setCustomValue] = useState('')
+  const [mhdModus, setMhdModus] = useState(() => {
+    const initial = {}
+    artikelListe.forEach((a) => {
+      const mhd = meldung?.eintraege?.[filialeId]?.[a.id]?.mhd || ''
+      initial[a.id] = mhdModusAusWert(mhd)
+    })
+    return initial
+  })
 
   if (!meldung) {
     return (
@@ -62,6 +99,31 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
 
   function setMhd(artikelId, mhd) {
     updateEintrag(artikelId, { mhd })
+  }
+
+  function getMhdModus(artikelId) {
+    return mhdModus[artikelId] || 'tag'
+  }
+
+  function handleMhdChange(artikelId, rawValue) {
+    const modus = getMhdModus(artikelId)
+    const digits = digitsOnly(rawValue).slice(0, MHD_MAX_DIGITS[modus])
+    setMhd(artikelId, formatMhdDigits(digits, modus))
+  }
+
+  function handleMhdKeyDown(artikelId, e) {
+    if (e.key !== 'Backspace') return
+    e.preventDefault()
+    const modus = getMhdModus(artikelId)
+    const digits = digitsOnly(getEintrag(artikelId).mhd).slice(0, -1)
+    setMhd(artikelId, formatMhdDigits(digits, modus))
+  }
+
+  function toggleMhdModus(artikelId) {
+    const next = getMhdModus(artikelId) === 'tag' ? 'monat' : 'tag'
+    const digits = digitsOnly(getEintrag(artikelId).mhd).slice(0, MHD_MAX_DIGITS[next])
+    setMhd(artikelId, formatMhdDigits(digits, next))
+    setMhdModus((prev) => ({ ...prev, [artikelId]: next }))
   }
 
   function openCustom(artikelId) {
@@ -156,14 +218,26 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
               <div className="mhd-row">
                 <input
                   type="text"
-                  inputMode="decimal"
-                  placeholder="TT.MM.JJJJ oder MM.JJ"
+                  inputMode="numeric"
+                  placeholder={getMhdModus(a.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
                   value={eintrag.mhd}
-                  onChange={(e) => setMhd(a.id, e.target.value)}
+                  onChange={(e) => handleMhdChange(a.id, e.target.value)}
+                  onKeyDown={(e) => handleMhdKeyDown(a.id, e)}
                 />
+                <button
+                  type="button"
+                  className="mhd-modus-btn"
+                  onClick={() => toggleMhdModus(a.id)}
+                  title="Zwischen Tag+Monat+Jahr und nur Monat+Jahr wechseln"
+                >
+                  {getMhdModus(a.id) === 'monat' ? 'Monat' : 'Tag'}
+                </button>
                 <input
                   type="date"
-                  onChange={(e) => setMhd(a.id, dateInputToDE(e.target.value))}
+                  onChange={(e) => {
+                    setMhd(a.id, dateInputToDE(e.target.value))
+                    setMhdModus((prev) => ({ ...prev, [a.id]: 'tag' }))
+                  }}
                   aria-label="Datepicker"
                 />
               </div>

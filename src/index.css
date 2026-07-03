@@ -205,6 +205,18 @@ html, body {
   border: 1px solid #ccc;
 }
 
+.mhd-modus-btn {
+  flex-shrink: 0;
+  padding: 10px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid #1d4ed8;
+  background: white;
+  color: #1d4ed8;
+  cursor: pointer;
+}
+
 .mhd-row input[type="date"] {
   width: 44px;
   padding: 0;
