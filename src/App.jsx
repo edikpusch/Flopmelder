@@ -1,0 +1,50 @@
+import { useEffect, useState } from 'react'
+import { seedIfEmpty } from './store.js'
+import { NavProvider, useNav } from './NavContext.jsx'
+import HomeScreen from './pages/HomeScreen.jsx'
+import EinstellungenScreen from './pages/EinstellungenScreen.jsx'
+import MeldungScreen from './pages/MeldungScreen.jsx'
+import FilialeErfassungScreen from './pages/FilialeErfassungScreen.jsx'
+import ArchivScreen from './pages/ArchivScreen.jsx'
+
+function Screens() {
+  const { route } = useNav()
+
+  switch (route.screen) {
+    case 'einstellungen':
+      return <EinstellungenScreen />
+    case 'meldung':
+      return <MeldungScreen meldungId={route.params.meldungId} />
+    case 'filiale':
+      return (
+        <FilialeErfassungScreen
+          meldungId={route.params.meldungId}
+          filialeId={route.params.filialeId}
+        />
+      )
+    case 'archiv':
+      return <ArchivScreen />
+    case 'home':
+    default:
+      return <HomeScreen />
+  }
+}
+
+export default function App() {
+  const [ready, setReady] = useState(false)
+
+  useEffect(() => {
+    seedIfEmpty()
+    setReady(true)
+  }, [])
+
+  if (!ready) return null
+
+  return (
+    <NavProvider>
+      <div className="app">
+        <Screens />
+      </div>
+    </NavProvider>
+  )
+}

@@ -1,0 +1,9 @@
+{
+  "name": "FlopMelder",
+  "short_name": "FlopMelder",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1d4ed8",
+  "icons": []
+}
