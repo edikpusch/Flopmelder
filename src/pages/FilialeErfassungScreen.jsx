@@ -156,6 +156,7 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
               <div className="mhd-row">
                 <input
                   type="text"
+                  inputMode="decimal"
                   placeholder="TT.MM.JJJJ oder MM.JJ"
                   value={eintrag.mhd}
                   onChange={(e) => setMhd(a.id, e.target.value)}
