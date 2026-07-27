@@ -49,12 +49,30 @@ function mhdModusAusWert(mhd) {
   return punkte === 1 ? 'monat' : 'tag'
 }
 
+function istErfasst(eintrag) {
+  return Number(eintrag?.menge) > 0
+}
+
 export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
   const filialen = getFilialen()
   const artikelListe = getArtikel()
-  const [customEditId, setCustomEditId] = useState(null)
+
+  // Setzt beim erneuten Öffnen genau dort fort, wo zuletzt aufgehört wurde
+  // (nicht "erster Artikel mit Menge 0", da 0 auch bewusst gewählt sein kann)
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const letzte = meldung?.filialeLastIndex?.[filialeId]
+    if (Number.isInteger(letzte) && letzte >= 0 && letzte < artikelListe.length) {
+      return letzte
+    }
+    const idx = artikelListe.findIndex(
+      (a) => !istErfasst(meldung?.eintraege?.[filialeId]?.[a.id])
+    )
+    return idx === -1 ? 0 : idx
+  })
+
+  const [customOpen, setCustomOpen] = useState(false)
   const [customValue, setCustomValue] = useState('')
   const [mhdModus, setMhdModus] = useState(() => {
     const initial = {}
@@ -64,15 +82,16 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     })
     return initial
   })
-  const [pendingFocusId, setPendingFocusId] = useState(null)
-  const mhdRefs = useRef({})
+
+  const [autoFocusMhd, setAutoFocusMhd] = useState(false)
+  const mhdInputRef = useRef(null)
 
   useEffect(() => {
-    if (pendingFocusId == null) return
-    const el = mhdRefs.current[pendingFocusId]
-    if (el) el.focus()
-    setPendingFocusId(null)
-  }, [pendingFocusId])
+    if (autoFocusMhd && mhdInputRef.current) {
+      mhdInputRef.current.focus()
+      setAutoFocusMhd(false)
+    }
+  }, [autoFocusMhd])
 
   if (!meldung) {
     return (
@@ -86,6 +105,11 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   }
 
   const filiale = filialen.find((f) => f.id === filialeId)
+  const artikel = artikelListe[currentIndex]
+  const anzahlGesamt = artikelListe.length
+  const anzahlErfasst = artikelListe.filter((a) =>
+    istErfasst(meldung.eintraege?.[filialeId]?.[a.id])
+  ).length
 
   function getEintrag(artikelId) {
     return meldung.eintraege?.[filialeId]?.[artikelId] || { mhd: '', menge: 0 }
@@ -100,11 +124,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     const updated = { ...meldung, eintraege }
     setMeldung(updated)
     saveMeldung(updated)
-  }
-
-  function setMenge(artikelId, menge) {
-    updateEintrag(artikelId, { menge })
-    if (menge > 0) setPendingFocusId(artikelId)
   }
 
   function setMhd(artikelId, mhd) {
@@ -136,16 +155,44 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     setMhdModus((prev) => ({ ...prev, [artikelId]: next }))
   }
 
-  function openCustom(artikelId) {
-    const aktuelleMenge = getEintrag(artikelId).menge
-    setCustomValue(aktuelleMenge ? formatMenge(aktuelleMenge) : '')
-    setCustomEditId(artikelId)
+  function goTo(index) {
+    const clamped = Math.max(0, Math.min(index, anzahlGesamt - 1))
+    setCustomOpen(false)
+    setCurrentIndex(clamped)
+    const filialeLastIndex = { ...(meldung.filialeLastIndex || {}), [filialeId]: clamped }
+    const updated = { ...meldung, filialeLastIndex }
+    setMeldung(updated)
+    saveMeldung(updated)
   }
 
-  function submitCustom(artikelId) {
-    const n = parseGermanNumber(customValue)
-    setMenge(artikelId, n)
-    setCustomEditId(null)
+  function goNext() {
+    goTo(currentIndex + 1)
+  }
+
+  function goPrev() {
+    goTo(currentIndex - 1)
+  }
+
+  // Menge 0 hat nichts weiter auszufüllen -> sofort zum nächsten Artikel springen.
+  // Menge > 0 -> im Artikel bleiben und direkt ins MHD-Feld springen.
+  function chooseMenge(value) {
+    updateEintrag(artikel.id, { menge: value })
+    setCustomOpen(false)
+    if (value > 0) {
+      setAutoFocusMhd(true)
+    } else if (currentIndex < anzahlGesamt - 1) {
+      goNext()
+    }
+  }
+
+  function openCustom() {
+    const aktuelleMenge = getEintrag(artikel.id).menge
+    setCustomValue(aktuelleMenge ? formatMenge(aktuelleMenge) : '')
+    setCustomOpen(true)
+  }
+
+  function submitCustom() {
+    chooseMenge(parseGermanNumber(customValue))
   }
 
   function markFertigUndZurueck() {
@@ -168,6 +215,12 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     }
   }
 
+  const eintrag = getEintrag(artikel.id)
+  const menge = Number(eintrag.menge) || 0
+  const isPreset = MENGE_PRESETS.includes(menge)
+  const mengeSichtbar = menge > 0
+  const istLetzterArtikel = currentIndex === anzahlGesamt - 1
+
   return (
     <div className="screen">
       <div className="header">
@@ -176,96 +229,120 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
         </button>
         <h1>Filiale {filiale ? filiale.nummer : ''}</h1>
       </div>
-      <div className="muted" style={{ marginBottom: 12 }}>
-        Monat: {meldung.monat}
+
+      <div className="progress">
+        Artikel {currentIndex + 1} / {anzahlGesamt} · {anzahlErfasst} mit Menge erfasst
       </div>
 
-      {artikelListe.map((a) => {
-        const eintrag = getEintrag(a.id)
-        const menge = Number(eintrag.menge) || 0
-        const isPreset = MENGE_PRESETS.includes(menge)
-        const mengeSichtbar = menge > 0
+      <div className="artikel-chips">
+        {artikelListe.map((a, i) => {
+          const erfasst = istErfasst(getEintrag(a.id))
+          return (
+            <button
+              key={a.id}
+              type="button"
+              className={`artikel-chip ${i === currentIndex ? 'current' : ''} ${erfasst ? 'erfasst' : ''}`}
+              onClick={() => goTo(i)}
+              title={a.name}
+            >
+              {i + 1}
+            </button>
+          )
+        })}
+      </div>
 
-        return (
-          <div className="artikel-row" key={a.id}>
-            <div className="artikel-name">{a.name}</div>
-            <div className="artikel-nr">{a.nummer}</div>
-            <div className="menge-buttons">
-              {MENGE_PRESETS.map((preset) => (
-                <button
-                  key={preset}
-                  className={`menge-btn ${menge === preset ? 'active' : ''}`}
-                  onClick={() => setMenge(a.id, preset)}
-                >
-                  {formatMenge(preset)}
-                </button>
-              ))}
-              <button
-                className={`menge-btn ${!isPreset ? 'active' : ''}`}
-                onClick={() => openCustom(a.id)}
-              >
-                {!isPreset && menge > 0 ? formatMenge(menge) : '+'}
-              </button>
-            </div>
+      <div className="artikel-card">
+        <div className="artikel-name-big">{artikel.name}</div>
+        <div className="artikel-nr">{artikel.nummer}</div>
 
-            {customEditId === a.id && (
-              <div className="mhd-row" style={{ marginBottom: 8 }}>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="z.B. 2,5"
-                  value={customValue}
-                  onChange={(e) => setCustomValue(e.target.value)}
-                  autoFocus
-                />
-                <button className="btn small" style={{ width: 'auto', margin: 0 }} onClick={() => submitCustom(a.id)}>
-                  OK
-                </button>
-              </div>
-            )}
+        <div className="menge-buttons">
+          {MENGE_PRESETS.map((preset) => (
+            <button
+              key={preset}
+              className={`menge-btn ${menge === preset ? 'active' : ''}`}
+              onClick={() => chooseMenge(preset)}
+            >
+              {formatMenge(preset)}
+            </button>
+          ))}
+          <button className={`menge-btn ${!isPreset ? 'active' : ''}`} onClick={openCustom}>
+            {!isPreset && menge > 0 ? formatMenge(menge) : '+'}
+          </button>
+        </div>
 
-            {mengeSichtbar && (
-              <div className="mhd-row">
-                <input
-                  ref={(el) => {
-                    mhdRefs.current[a.id] = el
-                  }}
-                  type="text"
-                  inputMode="numeric"
-                  placeholder={getMhdModus(a.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
-                  value={eintrag.mhd}
-                  onChange={(e) => handleMhdChange(a.id, e.target.value)}
-                  onKeyDown={(e) => handleMhdKeyDown(a.id, e)}
-                />
-                <button
-                  type="button"
-                  className="mhd-modus-btn"
-                  onClick={() => toggleMhdModus(a.id)}
-                  title="Zwischen Tag+Monat+Jahr und nur Monat+Jahr wechseln"
-                >
-                  {getMhdModus(a.id) === 'monat' ? 'Monat' : 'Tag'}
-                </button>
-                <input
-                  type="date"
-                  onChange={(e) => {
-                    setMhd(a.id, dateInputToDE(e.target.value))
-                    setMhdModus((prev) => ({ ...prev, [a.id]: 'tag' }))
-                  }}
-                  aria-label="Datepicker"
-                />
-              </div>
-            )}
+        {customOpen && (
+          <div className="mhd-row" style={{ marginBottom: 8 }}>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="z.B. 2,5"
+              value={customValue}
+              onChange={(e) => setCustomValue(e.target.value)}
+              autoFocus
+            />
+            <button className="btn small" style={{ width: 'auto', margin: 0 }} onClick={submitCustom}>
+              OK
+            </button>
           </div>
-        )
-      })}
+        )}
+
+        {mengeSichtbar && (
+          <div className="mhd-row">
+            <input
+              ref={mhdInputRef}
+              type="text"
+              inputMode="numeric"
+              placeholder={getMhdModus(artikel.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
+              value={eintrag.mhd}
+              onChange={(e) => handleMhdChange(artikel.id, e.target.value)}
+              onKeyDown={(e) => handleMhdKeyDown(artikel.id, e)}
+            />
+            <button
+              type="button"
+              className="mhd-modus-btn"
+              onClick={() => toggleMhdModus(artikel.id)}
+              title="Zwischen Tag+Monat+Jahr und nur Monat+Jahr wechseln"
+            >
+              {getMhdModus(artikel.id) === 'monat' ? 'Monat' : 'Tag'}
+            </button>
+            <input
+              type="date"
+              onChange={(e) => {
+                setMhd(artikel.id, dateInputToDE(e.target.value))
+                setMhdModus((prev) => ({ ...prev, [artikel.id]: 'tag' }))
+              }}
+              aria-label="Datepicker"
+            />
+          </div>
+        )}
+      </div>
 
       <div className="footer-actions">
-        <button className="btn secondary" onClick={markFertigUndZurueck}>
-          Speichern &amp; zurück
-        </button>
-        <button className="btn" onClick={markFertigUndNaechste}>
-          Speichern &amp; nächste Filiale
-        </button>
+        {!istLetzterArtikel && (
+          <>
+            <div className="wizard-nav">
+              <button className="btn secondary" onClick={goPrev} disabled={currentIndex === 0}>
+                ‹ Zurück
+              </button>
+              <button className="btn" onClick={goNext}>
+                Weiter ›
+              </button>
+            </div>
+            <button className="finish-link" onClick={markFertigUndZurueck}>
+              ✓ Filiale als fertig markieren &amp; zurück
+            </button>
+          </>
+        )}
+        {istLetzterArtikel && (
+          <>
+            <button className="btn secondary" onClick={markFertigUndZurueck}>
+              Speichern &amp; zurück
+            </button>
+            <button className="btn" onClick={markFertigUndNaechste}>
+              Speichern &amp; nächste Filiale
+            </button>
+          </>
+        )}
       </div>
     </div>
   )

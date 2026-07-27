@@ -150,22 +150,79 @@ html, body {
   margin-bottom: 12px;
 }
 
-.artikel-row {
-  background: white;
-  border-radius: 12px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
+.artikel-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  margin-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
 }
 
-.artikel-name {
-  font-size: 16px;
+.artikel-chip {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid #d0d5dd;
+  background: white;
+  color: #444;
+  font-size: 14px;
   font-weight: 600;
+  cursor: pointer;
+}
+
+.artikel-chip.erfasst {
+  background: #dcfce7;
+  border-color: #16a34a;
+  color: #166534;
+}
+
+.artikel-chip.current {
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(29, 78, 216, 0.25);
+}
+
+.artikel-card {
+  background: white;
+  border-radius: 16px;
+  padding: 22px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.artikel-name-big {
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .artikel-nr {
-  font-size: 12px;
+  font-size: 13px;
   color: #888;
-  margin-bottom: 8px;
+  margin-bottom: 16px;
+}
+
+.wizard-nav {
+  display: flex;
+  gap: 10px;
+}
+
+.wizard-nav .btn {
+  flex: 1;
+  margin-bottom: 0;
+}
+
+.finish-link {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #6b7280;
+  font-size: 14px;
+  padding: 12px;
+  text-align: center;
+  cursor: pointer;
 }
 
 .menge-buttons {

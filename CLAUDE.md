@@ -46,6 +46,7 @@ src/
   status,               // 'offen' | 'fertig' (informell, siehe filialeStatus)
   filialeStatus,        // { [filialeId]: 'fertig' } – gesetzt beim Speichern in FilialeErfassungScreen
   eintraege,             // { [filialeId]: { [artikelId]: { mhd: string, menge: number } } }
+  filialeLastIndex,      // { [filialeId]: number } – zuletzt angesehener Artikel-Index (Wizard-Resume)
 }]
 ```
 Beim App-Start seeden Store-Funktionen (`seedIfEmpty`) leere Keys mit den Stammdaten
@@ -71,13 +72,36 @@ Filiale") und den `eintraege` abgeleitet:
 - `teilweise`: mind. 1 Menge > 0, aber nicht als "fertig" gespeichert
 - `fertig`: `filialeStatus[filialeId] === 'fertig'`
 
+### Erfassungs-Flow (FilialeErfassungScreen.jsx) – Wizard statt Liste
+Analog zum MehrstundenManager-Prinzip wird **ein Artikel nach dem anderen** abgefragt
+(nicht alle 15 als lange Liste untereinander):
+- Große Artikel-Karte zeigt nur den aktuellen Artikel (Name, Nr., Menge-Buttons, MHD-Feld)
+- Chip-Leiste oben (15 nummerierte Kreise, horizontal scrollbar) zeigt Fortschritt auf
+  einen Blick (grün = Menge > 0 erfasst, blauer Rahmen = aktueller Artikel) und erlaubt
+  direktes Springen zu jedem Artikel per Tap
+- **Smart Auto-Advance:** Menge `0` gewählt → nichts weiter einzutragen → springt sofort
+  zum nächsten Artikel. Menge `> 0` gewählt → bleibt auf dem Artikel, Fokus springt
+  automatisch ins MHD-Feld (Zahlentastatur öffnet sich direkt, siehe `autoFocusMhd`/`mhdInputRef`)
+- Navigation unten: "‹ Zurück" / "Weiter ›" zwischen Artikeln; beim letzten Artikel (Index
+  `anzahlGesamt - 1`) werden diese durch die bekannten "Speichern & zurück" /
+  "Speichern & nächste Filiale" ersetzt
+- Zusätzlicher Textlink "✓ Filiale als fertig markieren & zurück" erlaubt jederzeit
+  frühzeitiges Abschließen, auch ohne alle 15 Artikel durchlaufen zu haben
+- **Resume-Position:** `meldung.filialeLastIndex[filialeId]` merkt sich den zuletzt
+  angesehenen Artikel-Index und wird bei jeder Navigation (`goTo`) aktualisiert. Beim
+  erneuten Öffnen der Filiale wird **dort fortgesetzt, nicht** beim "ersten Artikel mit
+  Menge 0" – ein Artikel kann ja bewusst auf 0 gesetzt worden sein (kein Bestand), das ist
+  nicht gleichbedeutend mit "noch nicht angesehen". Ohne gespeicherten Index (neue Filiale)
+  fällt die Logik auf "erster Artikel ohne Menge > 0" zurück
+
 ### MHD-Feld
 Erlaubte Formate: `TT.MM.JJJJ`, `TT.MM.JJ`, `MM.JJJJ`, `MM.JJ` – **nie** als echtes Datum
 interpretieren, immer als Roh-String speichern.
 
 **Auto-Formatierung beim Tippen** (`FilialeErfassungScreen.jsx`): Da `TT.MM.JJ` und
 `MM.JJJJ` bei gleicher Ziffernanzahl (6) nicht automatisch unterscheidbar sind, gibt es
-pro Artikel-Zeile einen Modus-Umschalter ("Tag" / "Monat"):
+pro Artikel einen Modus-Umschalter ("Tag" / "Monat"), dessen Zustand pro `artikelId` im
+`mhdModus`-State gemerkt wird (bleibt beim Zurück-/Vorspringen im Wizard erhalten):
 - `tag`-Modus: Zifferngruppen `[2,2,4]` → `TT.MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
 - `monat`-Modus: Zifferngruppen `[2,4]` → `MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
 - `formatMhdDigits(digits, modus)` setzt den Punkt automatisch, sobald ein Ziffernblock
