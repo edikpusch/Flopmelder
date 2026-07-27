@@ -252,6 +252,7 @@ html, body {
   display: flex;
   gap: 8px;
   align-items: center;
+  margin-bottom: 12px;
 }
 
 .mhd-row input[type="text"] {

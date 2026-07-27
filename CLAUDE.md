@@ -75,16 +75,21 @@ Filiale") und den `eintraege` abgeleitet:
 ### Erfassungs-Flow (FilialeErfassungScreen.jsx) – Wizard statt Liste
 Analog zum MehrstundenManager-Prinzip wird **ein Artikel nach dem anderen** abgefragt
 (nicht alle 15 als lange Liste untereinander):
-- Große Artikel-Karte zeigt nur den aktuellen Artikel (Name, Nr., Menge-Buttons, MHD-Feld)
+- Große Artikel-Karte zeigt nur den aktuellen Artikel: Name, Nr., **MHD-Feld zuerst**,
+  danach Menge-Buttons (bewusste Reihenfolge, siehe unten)
 - Chip-Leiste oben (15 nummerierte Kreise, horizontal scrollbar) zeigt Fortschritt auf
   einen Blick (grün = Menge > 0 erfasst, blauer Rahmen = aktueller Artikel) und erlaubt
   direktes Springen zu jedem Artikel per Tap
-- **Smart Auto-Advance:** Menge `0` gewählt → nichts weiter einzutragen → springt sofort
-  zum nächsten Artikel. Menge `> 0` gewählt → bleibt auf dem Artikel, Fokus springt
-  automatisch ins MHD-Feld (Zahlentastatur öffnet sich direkt, siehe `autoFocusMhd`/`mhdInputRef`)
-- Navigation unten: "‹ Zurück" / "Weiter ›" zwischen Artikeln; beim letzten Artikel (Index
-  `anzahlGesamt - 1`) werden diese durch die bekannten "Speichern & zurück" /
-  "Speichern & nächste Filiale" ersetzt
+- **MHD zuerst, dann Menge:** Beim Betreten eines Artikels (Mount oder `currentIndex`-Wechsel)
+  wird das MHD-Feld automatisch fokussiert **und** der Text selektiert (`mhdInputRef`-Effekt),
+  Zahlentastatur öffnet sich sofort. Erst danach wird die Menge gewählt – das ist bewusst der
+  **letzte** Schritt pro Artikel: ein Tap auf einen Menge-Button entzieht dem Textfeld den
+  Fokus (schließt die Tastatur automatisch) und springt **immer** direkt zum nächsten Artikel
+  (`chooseMenge`), unabhängig vom gewählten Wert (auch bei `0`). Kein manuelles
+  Tastatur-Schließen mehr nötig, um "Weiter" zu erreichen
+- Navigation unten: "‹ Zurück" / "Weiter ›" zwischen Artikeln (für manuelles Vor-/Zurückblättern
+  ohne Menge zu ändern); beim letzten Artikel (Index `anzahlGesamt - 1`) werden diese durch die
+  bekannten "Speichern & zurück" / "Speichern & nächste Filiale" ersetzt
 - Zusätzlicher Textlink "✓ Filiale als fertig markieren & zurück" erlaubt jederzeit
   frühzeitiges Abschließen, auch ohne alle 15 Artikel durchlaufen zu haben
 - **Resume-Position:** `meldung.filialeLastIndex[filialeId]` merkt sich den zuletzt
@@ -115,8 +120,10 @@ pro Artikel einen Modus-Umschalter ("Tag" / "Monat"), dessen Zustand pro `artike
 
 ### Menge
 Tap-Buttons `0 / 0,5 / 1 / 1,5 / 2 / +`. Der `+`-Button öffnet ein kleines Zahlenfeld für
-andere Werte (z.B. 2,5 / 3) und zeigt danach den custom-Wert statt "+" an. Default = 0.
-Bei Menge 0 wird das MHD-Feld ausgeblendet.
+andere Werte (z.B. 2,5 / 3) und zeigt danach den custom-Wert statt "+" an (Bestätigung mit
+"OK" verhält sich wie ein normaler Menge-Tap, siehe `submitCustom`/`chooseMenge`). Default = 0.
+Das MHD-Feld ist **immer sichtbar** (nicht mehr an Menge > 0 gekoppelt), da es im Wizard
+vor der Menge ausgefüllt wird.
 
 ### Vormonat als Vorlage (`getVormonatVorlage`)
 Sucht die neueste Meldung mit `monat` = Vormonat, übernimmt nur die `mhd`-Werte, setzt

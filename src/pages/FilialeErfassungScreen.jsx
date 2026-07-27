@@ -83,15 +83,18 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     return initial
   })
 
-  const [autoFocusMhd, setAutoFocusMhd] = useState(false)
   const mhdInputRef = useRef(null)
 
+  // Beim Betreten eines Artikels direkt ins MHD-Feld springen (Datum zuerst eintippen,
+  // danach Menge wählen - das schließt die Tastatur automatisch beim Weiterspringen)
   useEffect(() => {
-    if (autoFocusMhd && mhdInputRef.current) {
-      mhdInputRef.current.focus()
-      setAutoFocusMhd(false)
+    const el = mhdInputRef.current
+    if (el) {
+      el.focus()
+      el.select()
     }
-  }, [autoFocusMhd])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex])
 
   if (!meldung) {
     return (
@@ -173,14 +176,13 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     goTo(currentIndex - 1)
   }
 
-  // Menge 0 hat nichts weiter auszufüllen -> sofort zum nächsten Artikel springen.
-  // Menge > 0 -> im Artikel bleiben und direkt ins MHD-Feld springen.
+  // Menge ist der letzte Schritt für einen Artikel (Datum kommt zuerst) -> danach
+  // automatisch weiter. Das Tippen auf einen Button schließt die Tastatur von selbst,
+  // da der Fokus vom MHD-Textfeld weg auf den Button wandert.
   function chooseMenge(value) {
     updateEintrag(artikel.id, { menge: value })
     setCustomOpen(false)
-    if (value > 0) {
-      setAutoFocusMhd(true)
-    } else if (currentIndex < anzahlGesamt - 1) {
+    if (currentIndex < anzahlGesamt - 1) {
       goNext()
     }
   }
@@ -218,7 +220,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const eintrag = getEintrag(artikel.id)
   const menge = Number(eintrag.menge) || 0
   const isPreset = MENGE_PRESETS.includes(menge)
-  const mengeSichtbar = menge > 0
   const istLetzterArtikel = currentIndex === anzahlGesamt - 1
 
   return (
@@ -255,6 +256,34 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
         <div className="artikel-name-big">{artikel.name}</div>
         <div className="artikel-nr">{artikel.nummer}</div>
 
+        <div className="mhd-row">
+          <input
+            ref={mhdInputRef}
+            type="text"
+            inputMode="numeric"
+            placeholder={getMhdModus(artikel.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
+            value={eintrag.mhd}
+            onChange={(e) => handleMhdChange(artikel.id, e.target.value)}
+            onKeyDown={(e) => handleMhdKeyDown(artikel.id, e)}
+          />
+          <button
+            type="button"
+            className="mhd-modus-btn"
+            onClick={() => toggleMhdModus(artikel.id)}
+            title="Zwischen Tag+Monat+Jahr und nur Monat+Jahr wechseln"
+          >
+            {getMhdModus(artikel.id) === 'monat' ? 'Monat' : 'Tag'}
+          </button>
+          <input
+            type="date"
+            onChange={(e) => {
+              setMhd(artikel.id, dateInputToDE(e.target.value))
+              setMhdModus((prev) => ({ ...prev, [artikel.id]: 'tag' }))
+            }}
+            aria-label="Datepicker"
+          />
+        </div>
+
         <div className="menge-buttons">
           {MENGE_PRESETS.map((preset) => (
             <button
@@ -271,7 +300,7 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
         </div>
 
         {customOpen && (
-          <div className="mhd-row" style={{ marginBottom: 8 }}>
+          <div className="mhd-row" style={{ marginBottom: 0 }}>
             <input
               type="text"
               inputMode="decimal"
@@ -283,36 +312,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
             <button className="btn small" style={{ width: 'auto', margin: 0 }} onClick={submitCustom}>
               OK
             </button>
-          </div>
-        )}
-
-        {mengeSichtbar && (
-          <div className="mhd-row">
-            <input
-              ref={mhdInputRef}
-              type="text"
-              inputMode="numeric"
-              placeholder={getMhdModus(artikel.id) === 'monat' ? 'MM.JJJJ' : 'TT.MM.JJJJ'}
-              value={eintrag.mhd}
-              onChange={(e) => handleMhdChange(artikel.id, e.target.value)}
-              onKeyDown={(e) => handleMhdKeyDown(artikel.id, e)}
-            />
-            <button
-              type="button"
-              className="mhd-modus-btn"
-              onClick={() => toggleMhdModus(artikel.id)}
-              title="Zwischen Tag+Monat+Jahr und nur Monat+Jahr wechseln"
-            >
-              {getMhdModus(artikel.id) === 'monat' ? 'Monat' : 'Tag'}
-            </button>
-            <input
-              type="date"
-              onChange={(e) => {
-                setMhd(artikel.id, dateInputToDE(e.target.value))
-                setMhdModus((prev) => ({ ...prev, [artikel.id]: 'tag' }))
-              }}
-              aria-label="Datepicker"
-            />
           </div>
         )}
       </div>
