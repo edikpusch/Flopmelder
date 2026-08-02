@@ -1,12 +1,21 @@
 // localStorage-Zugriff für FlopMelder
-// Keys: fm_profile, fm_filialen, fm_artikel, fm_meldungen
+// Keys: fm_profiles, fm_active_profile, fm_artikel, fm_meldungen
+//
+// Ein "Profil" ist ein Bezirk: eigener VL-Name, eigene NL, eigene Filialliste.
+// Die Flop-15-Artikelliste ist bewusst GLOBAL (firmenweit vorgegeben) und liegt
+// deshalb nicht im Profil.
 
-const KEY_PROFILE = 'fm_profile'
-const KEY_FILIALEN = 'fm_filialen'
+const KEY_PROFILES = 'fm_profiles'
+const KEY_ACTIVE_PROFILE = 'fm_active_profile'
 const KEY_ARTIKEL = 'fm_artikel'
 const KEY_MELDUNGEN = 'fm_meldungen'
 
-const DEFAULT_PROFILE = { vlName: 'Pusch', nl: 'Ganderkesee' }
+// Altlasten aus der Ein-Profil-Version, werden einmalig migriert
+const LEGACY_KEY_PROFILE = 'fm_profile'
+const LEGACY_KEY_FILIALEN = 'fm_filialen'
+
+const DEFAULT_VL = 'Pusch'
+const DEFAULT_NL = 'Ganderkesee'
 
 const DEFAULT_FILIALEN_NUMMERN = [
   '2233', '2239', '2255', '2497', '2562', '7071', '7160', '2056', '2400', '2460',
@@ -50,50 +59,136 @@ function writeJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
 }
 
-// --- Seeding ---
+function defaultFilialen() {
+  return DEFAULT_FILIALEN_NUMMERN.map((nummer) => ({ id: makeId(), nummer }))
+}
+
+function defaultArtikel() {
+  return DEFAULT_ARTIKEL.map((a) => ({ id: makeId(), nummer: a.nummer, name: a.name }))
+}
+
+// --- Seeding & Migration ---
 
 export function seedIfEmpty() {
-  if (!localStorage.getItem(KEY_PROFILE)) {
-    writeJson(KEY_PROFILE, DEFAULT_PROFILE)
-  }
-  if (!localStorage.getItem(KEY_FILIALEN)) {
-    writeJson(
-      KEY_FILIALEN,
-      DEFAULT_FILIALEN_NUMMERN.map((nummer) => ({ id: makeId(), nummer }))
-    )
-  }
   if (!localStorage.getItem(KEY_ARTIKEL)) {
-    writeJson(
-      KEY_ARTIKEL,
-      DEFAULT_ARTIKEL.map((a) => ({ id: makeId(), nummer: a.nummer, name: a.name }))
-    )
+    writeJson(KEY_ARTIKEL, defaultArtikel())
   }
   if (!localStorage.getItem(KEY_MELDUNGEN)) {
     writeJson(KEY_MELDUNGEN, [])
   }
+
+  if (!localStorage.getItem(KEY_PROFILES)) {
+    // Migration aus der Ein-Profil-Version: vorhandene Stammdaten übernehmen,
+    // damit bestehende Meldungen weiter passen (IDs der Filialen bleiben!)
+    const legacyProfile = readJson(LEGACY_KEY_PROFILE, null)
+    const legacyFilialen = readJson(LEGACY_KEY_FILIALEN, null)
+
+    const profil = {
+      id: makeId(),
+      name: legacyProfile?.nl || DEFAULT_NL,
+      vlName: legacyProfile?.vlName || DEFAULT_VL,
+      nl: legacyProfile?.nl || DEFAULT_NL,
+      filialen: Array.isArray(legacyFilialen) && legacyFilialen.length
+        ? legacyFilialen
+        : defaultFilialen(),
+    }
+    writeJson(KEY_PROFILES, [profil])
+    writeJson(KEY_ACTIVE_PROFILE, profil.id)
+
+    // Bestehende Meldungen dem migrierten Profil zuordnen
+    const meldungen = readJson(KEY_MELDUNGEN, [])
+    if (meldungen.some((m) => !m.profileId)) {
+      writeJson(
+        KEY_MELDUNGEN,
+        meldungen.map((m) => (m.profileId ? m : { ...m, profileId: profil.id }))
+      )
+    }
+  }
+
+  // Aktives Profil absichern (z.B. wenn es gelöscht wurde)
+  const profile = getProfiles()
+  const aktiv = localStorage.getItem(KEY_ACTIVE_PROFILE)
+  if (profile.length && !profile.some((p) => p.id === aktiv)) {
+    writeJson(KEY_ACTIVE_PROFILE, profile[0].id)
+  }
 }
 
-// --- Profil ---
+// --- Profile (Bezirke) ---
 
-export function getProfile() {
-  return readJson(KEY_PROFILE, DEFAULT_PROFILE)
+export function getProfiles() {
+  return readJson(KEY_PROFILES, [])
 }
 
-export function saveProfile(profile) {
-  writeJson(KEY_PROFILE, profile)
+export function saveProfiles(profile) {
+  writeJson(KEY_PROFILES, profile)
 }
 
-// --- Filialen ---
+export function getActiveProfileId() {
+  return readJson(KEY_ACTIVE_PROFILE, null)
+}
+
+export function setActiveProfileId(id) {
+  writeJson(KEY_ACTIVE_PROFILE, id)
+}
+
+export function getActiveProfile() {
+  const alle = getProfiles()
+  const id = getActiveProfileId()
+  return alle.find((p) => p.id === id) || alle[0] || null
+}
+
+export function saveProfile(profil) {
+  const alle = getProfiles()
+  const idx = alle.findIndex((p) => p.id === profil.id)
+  if (idx >= 0) alle[idx] = profil
+  else alle.push(profil)
+  saveProfiles(alle)
+  return profil
+}
+
+export function createProfile({ name, vlName, nl, mitStandardFilialen = false } = {}) {
+  const profil = {
+    id: makeId(),
+    name: name || 'Neuer Bezirk',
+    vlName: vlName || '',
+    nl: nl || '',
+    filialen: mitStandardFilialen ? defaultFilialen() : [],
+  }
+  saveProfile(profil)
+  return profil
+}
+
+// Löscht den Bezirk samt seiner Meldungen (sonst blieben verwaiste Meldungen liegen)
+export function deleteProfile(id) {
+  const rest = getProfiles().filter((p) => p.id !== id)
+  saveProfiles(rest)
+  writeJson(
+    KEY_MELDUNGEN,
+    getMeldungen().filter((m) => m.profileId !== id)
+  )
+  if (getActiveProfileId() === id) {
+    setActiveProfileId(rest[0]?.id ?? null)
+  }
+  return rest
+}
+
+export function countMeldungenForProfile(profileId) {
+  return getMeldungen().filter((m) => m.profileId === profileId).length
+}
+
+// --- Filialen (immer die des aktiven Bezirks) ---
 
 export function getFilialen() {
-  return readJson(KEY_FILIALEN, [])
+  return getActiveProfile()?.filialen || []
 }
 
 export function saveFilialen(filialen) {
-  writeJson(KEY_FILIALEN, filialen)
+  const profil = getActiveProfile()
+  if (!profil) return
+  saveProfile({ ...profil, filialen })
 }
 
-// --- Artikel ---
+// --- Artikel (global) ---
 
 export function getArtikel() {
   return readJson(KEY_ARTIKEL, [])
@@ -103,16 +198,48 @@ export function saveArtikel(artikel) {
   writeJson(KEY_ARTIKEL, artikel)
 }
 
+// Setzt auf die Standardliste zurück, behält aber die IDs bereits bekannter
+// ArtikelNummern bei. Sonst würden alle vorhandenen Meldungen ihre Einträge
+// verlieren (sie referenzieren die Artikel-ID).
 export function resetArtikelToDefault() {
-  const artikel = DEFAULT_ARTIKEL.map((a) => ({ id: makeId(), nummer: a.nummer, name: a.name }))
+  const bisher = getArtikel()
+  const artikel = DEFAULT_ARTIKEL.map((a) => {
+    const treffer = bisher.find((b) => b.nummer === a.nummer)
+    return { id: treffer ? treffer.id : makeId(), nummer: a.nummer, name: a.name }
+  })
   writeJson(KEY_ARTIKEL, artikel)
   return artikel
+}
+
+// Wie viele erfasste Einträge hängen an einem Artikel / einer Filiale?
+// Basis für die Warnung vor dem Löschen.
+export function countEintraegeFuerArtikel(artikelId) {
+  let n = 0
+  getMeldungen().forEach((m) => {
+    Object.values(m.eintraege || {}).forEach((proFiliale) => {
+      if (proFiliale?.[artikelId]) n++
+    })
+  })
+  return n
+}
+
+export function countEintraegeFuerFiliale(filialeId) {
+  let n = 0
+  getMeldungen().forEach((m) => {
+    const proFiliale = m.eintraege?.[filialeId]
+    if (proFiliale) n += Object.keys(proFiliale).length
+  })
+  return n
 }
 
 // --- Meldungen ---
 
 export function getMeldungen() {
   return readJson(KEY_MELDUNGEN, [])
+}
+
+export function getMeldungenForProfile(profileId) {
+  return getMeldungen().filter((m) => m.profileId === profileId)
 }
 
 export function getMeldung(id) {
@@ -129,24 +256,32 @@ export function saveMeldung(meldung) {
 }
 
 export function deleteMeldung(id) {
-  const all = getMeldungen().filter((m) => m.id !== id)
-  writeJson(KEY_MELDUNGEN, all)
+  writeJson(
+    KEY_MELDUNGEN,
+    getMeldungen().filter((m) => m.id !== id)
+  )
 }
 
-export function createMeldung(monat) {
+export function findMeldung(profileId, monat) {
+  return getMeldungen().find((m) => m.profileId === profileId && m.monat === monat) || null
+}
+
+export function createMeldung(monat, profileId) {
   const meldung = {
     id: makeId(),
+    profileId,
     monat,
     erstelltAm: new Date().toISOString(),
     eintraege: {},
-    status: 'offen',
+    filialeLastIndex: {},
   }
   saveMeldung(meldung)
   return meldung
 }
 
-// Vormonat als Vorlage: liefert MHD-Werte des Vormonats (gleicher Monat-1), Mengen bleiben 0
-export function getVormonatVorlage(monat) {
+// Vormonat als Vorlage: liefert nur die MHD-Werte des Vormonats (gleicher Bezirk).
+// Mengen werden bewusst NICHT übernommen.
+export function getVormonatVorlage(monat, profileId) {
   const [jahr, monatNr] = monat.split('-').map(Number)
   let vJahr = jahr
   let vMonat = monatNr - 1
@@ -155,20 +290,46 @@ export function getVormonatVorlage(monat) {
     vJahr -= 1
   }
   const vormonatStr = `${vJahr}-${String(vMonat).padStart(2, '0')}`
-  const alle = getMeldungen()
-  const vormonat = alle
-    .filter((m) => m.monat === vormonatStr)
+  const vormonat = getMeldungen()
+    .filter((m) => m.monat === vormonatStr && m.profileId === profileId)
     .sort((a, b) => new Date(b.erstelltAm) - new Date(a.erstelltAm))[0]
   if (!vormonat) return null
 
-  const eintraege = {}
+  const mhdWerte = {}
   Object.entries(vormonat.eintraege || {}).forEach(([filialeId, artikelMap]) => {
-    eintraege[filialeId] = {}
+    const proFiliale = {}
     Object.entries(artikelMap || {}).forEach(([artikelId, val]) => {
-      eintraege[filialeId][artikelId] = { mhd: val?.mhd || '', menge: 0 }
+      if (val?.mhd) proFiliale[artikelId] = val.mhd
     })
+    if (Object.keys(proFiliale).length) mhdWerte[filialeId] = proFiliale
   })
-  return eintraege
+  return { monat: vormonatStr, mhdWerte }
+}
+
+// --- Abgeleiteter Status (nicht gespeichert, immer berechnet) ---
+//
+// Ein Artikel gilt als erledigt, sobald bewusst eine Menge gewählt wurde -
+// auch die 0 ("kein Bestand"). Reines Weiterblättern zählt NICHT.
+export function istArtikelErledigt(eintrag) {
+  return eintrag?.erfasst === true || Number(eintrag?.menge) > 0
+}
+
+export function countErledigt(meldung, filialeId, artikelListe) {
+  const eintraege = meldung?.eintraege?.[filialeId] || {}
+  return artikelListe.filter((a) => istArtikelErledigt(eintraege[a.id])).length
+}
+
+export function getFilialeStatus(meldung, filialeId, artikelListe) {
+  if (!artikelListe.length) return 'offen'
+  const erledigt = countErledigt(meldung, filialeId, artikelListe)
+  if (erledigt >= artikelListe.length) return 'fertig'
+  if (erledigt > 0) return 'teilweise'
+  return 'offen'
+}
+
+export function istMeldungVollstaendig(meldung, filialen, artikelListe) {
+  if (!filialen.length || !artikelListe.length) return false
+  return filialen.every((f) => getFilialeStatus(meldung, f.id, artikelListe) === 'fertig')
 }
 
 export { makeId }

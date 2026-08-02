@@ -1,20 +1,51 @@
+import { useState } from 'react'
 import { useNav } from '../NavContext.jsx'
-import { getMeldungen, getFilialen } from '../store.js'
+import {
+  getMeldungen,
+  deleteMeldung,
+  getProfiles,
+  getArtikel,
+  getActiveProfileId,
+  istMeldungVollstaendig,
+} from '../store.js'
 import { exportMeldung } from '../export.js'
 
 export default function ArchivScreen() {
   const { navigate } = useNav()
-  const meldungen = [...getMeldungen()].sort((a, b) => b.monat.localeCompare(a.monat))
-  const filialen = getFilialen()
+  const [meldungen, setMeldungen] = useState(() => getMeldungen())
+  const [nurAktiver, setNurAktiver] = useState(true)
+  const profile = getProfiles()
+  const artikelListe = getArtikel()
+  const aktivId = getActiveProfileId()
 
-  function gesamtStatus(meldung) {
-    const alleFertig = filialen.every((f) => meldung.filialeStatus?.[f.id] === 'fertig')
-    return alleFertig && filialen.length > 0 ? 'fertig' : 'offen'
+  const sichtbar = meldungen
+    .filter((m) => (nurAktiver ? m.profileId === aktivId : true))
+    .sort((a, b) => b.monat.localeCompare(a.monat) || b.erstelltAm.localeCompare(a.erstelltAm))
+
+  function profilVon(meldung) {
+    return profile.find((p) => p.id === meldung.profileId) || null
   }
 
   async function schnellExport(e, meldung) {
     e.stopPropagation()
-    await exportMeldung(meldung, filialen)
+    const profil = profilVon(meldung)
+    if (!profil) {
+      alert('Der Bezirk zu dieser Meldung wurde gelöscht – Export nicht möglich.')
+      return
+    }
+    await exportMeldung(meldung, profil.filialen || [], profil)
+  }
+
+  function loeschen(e, meldung) {
+    e.stopPropagation()
+    const profil = profilVon(meldung)
+    const ok = confirm(
+      `Meldung ${meldung.monat}${profil ? ` (${profil.name})` : ''} endgültig löschen?\n` +
+        'Alle erfassten MHD- und Mengenwerte gehen dabei verloren.'
+    )
+    if (!ok) return
+    deleteMeldung(meldung.id)
+    setMeldungen(getMeldungen())
   }
 
   return (
@@ -26,10 +57,18 @@ export default function ArchivScreen() {
         <h1>Archiv</h1>
       </div>
 
-      {meldungen.length === 0 && <p className="muted">Noch keine Meldungen vorhanden.</p>}
+      {profile.length > 1 && (
+        <button className="btn secondary" onClick={() => setNurAktiver((v) => !v)}>
+          {nurAktiver ? 'Alle Bezirke anzeigen' : 'Nur aktiven Bezirk anzeigen'}
+        </button>
+      )}
 
-      {meldungen.map((m) => {
-        const status = gesamtStatus(m)
+      {sichtbar.length === 0 && <p className="muted">Noch keine Meldungen vorhanden.</p>}
+
+      {sichtbar.map((m) => {
+        const profil = profilVon(m)
+        const filialen = profil?.filialen || []
+        const vollstaendig = istMeldungVollstaendig(m, filialen, artikelListe)
         return (
           <div
             className="card"
@@ -41,17 +80,23 @@ export default function ArchivScreen() {
               <div>
                 <div style={{ fontWeight: 600 }}>{m.monat}</div>
                 <div className="muted">
-                  Erstellt am {new Date(m.erstelltAm).toLocaleDateString('de-DE')}
+                  {profil ? profil.name : 'Bezirk gelöscht'} · erstellt{' '}
+                  {new Date(m.erstelltAm).toLocaleDateString('de-DE')}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span className={`badge ${status}`}>{status}</span>
+                <span className={`badge ${vollstaendig ? 'fertig' : 'teilweise'}`}>
+                  {vollstaendig ? 'vollständig' : 'unvollständig'}
+                </span>
                 <button
                   className="icon-btn"
                   onClick={(e) => schnellExport(e, m)}
                   title="Erneut exportieren"
                 >
-                  ⭳ xlsx
+                  ⭳
+                </button>
+                <button className="icon-btn" onClick={(e) => loeschen(e, m)} title="Löschen">
+                  🗑
                 </button>
               </div>
             </div>

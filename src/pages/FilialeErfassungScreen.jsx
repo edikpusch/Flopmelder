@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNav } from '../NavContext.jsx'
-import { getMeldung, saveMeldung, getFilialen, getArtikel } from '../store.js'
+import {
+  getMeldung,
+  saveMeldung,
+  getProfiles,
+  getArtikel,
+  istArtikelErledigt,
+} from '../store.js'
 
 const MENGE_PRESETS = [0, 0.5, 1, 1.5, 2]
 
@@ -49,26 +55,21 @@ function mhdModusAusWert(mhd) {
   return punkte === 1 ? 'monat' : 'tag'
 }
 
-function istErfasst(eintrag) {
-  return Number(eintrag?.menge) > 0
-}
-
 export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
   const meldungRef = useRef(meldung)
-  const filialen = getFilialen()
   const artikelListe = getArtikel()
 
   // Setzt beim erneuten Öffnen genau dort fort, wo zuletzt aufgehört wurde
-  // (nicht "erster Artikel mit Menge 0", da 0 auch bewusst gewählt sein kann)
+  // (nicht "erster Artikel ohne Menge", da 0 auch bewusst gewählt sein kann)
   const [currentIndex, setCurrentIndex] = useState(() => {
     const letzte = meldung?.filialeLastIndex?.[filialeId]
     if (Number.isInteger(letzte) && letzte >= 0 && letzte < artikelListe.length) {
       return letzte
     }
     const idx = artikelListe.findIndex(
-      (a) => !istErfasst(meldung?.eintraege?.[filialeId]?.[a.id])
+      (a) => !istArtikelErledigt(meldung?.eintraege?.[filialeId]?.[a.id])
     )
     return idx === -1 ? 0 : idx
   })
@@ -108,15 +109,22 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     )
   }
 
+  // Filialen kommen aus dem Bezirk DIESER Meldung, nicht aus dem aktiven Bezirk
+  const profil = getProfiles().find((p) => p.id === meldung.profileId) || null
+  const filialen = profil?.filialen || []
   const filiale = filialen.find((f) => f.id === filialeId)
   const artikel = artikelListe[currentIndex]
   const anzahlGesamt = artikelListe.length
-  const anzahlErfasst = artikelListe.filter((a) =>
-    istErfasst(meldung.eintraege?.[filialeId]?.[a.id])
-  ).length
 
-  function getEintrag(artikelId) {
-    return meldung.eintraege?.[filialeId]?.[artikelId] || { mhd: '', menge: 0 }
+  if (!artikel) {
+    return (
+      <div className="screen">
+        <p>Keine Artikel vorhanden. Lege sie in den Einstellungen an.</p>
+        <button className="btn" onClick={() => navigate('meldung', { meldungId })}>
+          Zurück
+        </button>
+      </div>
+    )
   }
 
   // ALLE Schreibzugriffe laufen hierüber. Der Ref hält immer den neuesten Stand,
@@ -129,6 +137,10 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     setMeldung(next)
     saveMeldung(next)
     return next
+  }
+
+  function getEintrag(artikelId) {
+    return meldung.eintraege?.[filialeId]?.[artikelId] || { mhd: '', menge: 0 }
   }
 
   function updateEintrag(artikelId, patch) {
@@ -192,8 +204,9 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   // Menge ist der letzte Schritt für einen Artikel (Datum kommt zuerst) -> danach
   // automatisch weiter. Das Tippen auf einen Button schließt die Tastatur von selbst,
   // da der Fokus vom MHD-Textfeld weg auf den Button wandert.
+  // erfasst=true markiert den Artikel als bewusst entschieden - auch bei Menge 0.
   function chooseMenge(value) {
-    updateEintrag(artikel.id, { menge: value })
+    updateEintrag(artikel.id, { menge: value, erfasst: true })
     setCustomOpen(false)
     if (currentIndex < anzahlGesamt - 1) {
       goNext()
@@ -210,20 +223,11 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     chooseMenge(parseGermanNumber(customValue))
   }
 
-  function markFertig() {
-    mutateMeldung((m) => ({
-      ...m,
-      filialeStatus: { ...(m.filialeStatus || {}), [filialeId]: 'fertig' },
-    }))
-  }
-
-  function markFertigUndZurueck() {
-    markFertig()
+  function zurueckZurUebersicht() {
     navigate('meldung', { meldungId: meldung.id })
   }
 
-  function markFertigUndNaechste() {
-    markFertig()
+  function naechsteFiliale() {
     const idx = filialen.findIndex((f) => f.id === filialeId)
     const naechste = filialen[idx + 1]
     if (naechste) {
@@ -237,28 +241,33 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const menge = Number(eintrag.menge) || 0
   const isPreset = MENGE_PRESETS.includes(menge)
   const istLetzterArtikel = currentIndex === anzahlGesamt - 1
+  const erledigteArtikel = artikelListe.filter((a) => istArtikelErledigt(getEintrag(a.id)))
+  const offeneNummern = artikelListe
+    .map((a, i) => (istArtikelErledigt(getEintrag(a.id)) ? null : i + 1))
+    .filter(Boolean)
+  const alleErledigt = offeneNummern.length === 0
 
   return (
     <div className="screen">
       <div className="header">
-        <button className="btn ghost" onClick={() => navigate('meldung', { meldungId: meldung.id })}>
+        <button className="btn ghost" onClick={zurueckZurUebersicht}>
           ← Zurück
         </button>
         <h1>Filiale {filiale ? filiale.nummer : ''}</h1>
       </div>
 
       <div className="progress">
-        Artikel {currentIndex + 1} / {anzahlGesamt} · {anzahlErfasst} mit Menge erfasst
+        Artikel {currentIndex + 1} / {anzahlGesamt} · {erledigteArtikel.length} erfasst
       </div>
 
       <div className="artikel-chips">
         {artikelListe.map((a, i) => {
-          const erfasst = istErfasst(getEintrag(a.id))
+          const erledigt = istArtikelErledigt(getEintrag(a.id))
           return (
             <button
               key={a.id}
               type="button"
-              className={`artikel-chip ${i === currentIndex ? 'current' : ''} ${erfasst ? 'erfasst' : ''}`}
+              className={`artikel-chip ${i === currentIndex ? 'current' : ''} ${erledigt ? 'erfasst' : ''}`}
               onClick={() => goTo(i)}
               title={a.name}
             >
@@ -330,34 +339,43 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
             </button>
           </div>
         )}
+
+        {!istArtikelErledigt(eintrag) && (
+          <div className="muted" style={{ marginTop: 10 }}>
+            Noch nicht erfasst – wähle eine Menge (auch 0 zählt).
+          </div>
+        )}
       </div>
 
       <div className="footer-actions">
+        {!alleErledigt && (
+          <div className="warning-box">
+            Noch offen: Artikel {offeneNummern.join(', ')}
+          </div>
+        )}
         {!istLetzterArtikel && (
-          <>
-            <div className="wizard-nav">
-              <button className="btn secondary" onClick={goPrev} disabled={currentIndex === 0}>
-                ‹ Zurück
-              </button>
-              <button className="btn" onClick={goNext}>
-                Weiter ›
-              </button>
-            </div>
-            <button className="finish-link" onClick={markFertigUndZurueck}>
-              ✓ Filiale als fertig markieren &amp; zurück
+          <div className="wizard-nav">
+            <button className="btn secondary" onClick={goPrev} disabled={currentIndex === 0}>
+              ‹ Zurück
             </button>
-          </>
+            <button className="btn" onClick={goNext}>
+              Weiter ›
+            </button>
+          </div>
         )}
         {istLetzterArtikel && (
-          <>
-            <button className="btn secondary" onClick={markFertigUndZurueck}>
-              Speichern &amp; zurück
+          <div className="wizard-nav">
+            <button className="btn secondary" onClick={goPrev} disabled={currentIndex === 0}>
+              ‹ Zurück
             </button>
-            <button className="btn" onClick={markFertigUndNaechste}>
-              Speichern &amp; nächste Filiale
+            <button className="btn" onClick={naechsteFiliale}>
+              Nächste Filiale ›
             </button>
-          </>
+          </div>
         )}
+        <button className="finish-link" onClick={zurueckZurUebersicht}>
+          Zur Filialübersicht
+        </button>
       </div>
     </div>
   )

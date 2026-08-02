@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs'
-import { getProfile, getArtikel } from './store.js'
+import { getArtikel } from './store.js'
 
 const THIN = { style: 'thin' }
 const BORDER_ALL = { top: THIN, left: THIN, bottom: THIN, right: THIN }
@@ -12,8 +12,16 @@ function sanitizeFilename(str) {
   return String(str).replace(/[\\/:*?"<>|]/g, '-')
 }
 
-export async function exportMeldung(meldung, filialen) {
-  const profile = getProfile()
+// Schreibt reine Zahlen als Zahl (rechtsbündig wie im Original), alles
+// andere unverändert als Text - Filial-Nummern können theoretisch Buchstaben haben.
+function filialNummerWert(nummer) {
+  const s = String(nummer ?? '').trim()
+  return /^\d+$/.test(s) ? Number(s) : s
+}
+
+export async function exportMeldung(meldung, filialen, profil) {
+  const vlName = profil?.vlName || ''
+  const nl = profil?.nl || ''
   const artikelListe = getArtikel()
 
   const workbook = new ExcelJS.Workbook()
@@ -73,16 +81,17 @@ export async function exportMeldung(meldung, filialen) {
   filialen.forEach((filiale, i) => {
     const rowIdx = 5 + i
     const row = sheet.getRow(rowIdx)
-    row.getCell(COL_A).value = i === 0 ? profile.vlName : ''
-    row.getCell(COL_B).value = filiale.nummer
+    row.getCell(COL_A).value = i === 0 ? vlName : ''
+    row.getCell(COL_B).value = filialNummerWert(filiale.nummer)
 
     artikelListe.forEach((a, j) => {
       const base = FIRST_ARTIKEL_COL + j * 2
       const eintrag = meldung.eintraege?.[filiale.id]?.[a.id] || { mhd: '', menge: 0 }
 
       const mhdCell = row.getCell(base)
-      mhdCell.value = eintrag.mhd || ''
       mhdCell.numFmt = '@' // als Text, kein Datumsformat
+      // Leeres MHD bleibt eine echte Leerzelle statt einem leeren String
+      if (eintrag.mhd) mhdCell.value = eintrag.mhd
       mhdCell.alignment = { horizontal: 'center', vertical: 'middle' }
 
       const mengeCell = row.getCell(base + 1)
@@ -105,8 +114,8 @@ export async function exportMeldung(meldung, filialen) {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   })
 
-  const dateiname = `Flop 15 Artikel NL ${sanitizeFilename(profile.nl)} ${sanitizeFilename(
-    profile.vlName
+  const dateiname = `Flop 15 Artikel NL ${sanitizeFilename(nl)} ${sanitizeFilename(
+    vlName
   )} ${meldung.monat}.xlsx`
 
   const url = URL.createObjectURL(blob)

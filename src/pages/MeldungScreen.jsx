@@ -1,30 +1,22 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNav } from '../NavContext.jsx'
 import {
   getMeldung,
   saveMeldung,
-  getFilialen,
+  getArtikel,
+  getProfiles,
   getVormonatVorlage,
+  findMeldung,
+  countErledigt,
+  getFilialeStatus,
 } from '../store.js'
 import { exportMeldung } from '../export.js'
-
-function filialeStatus(meldung, filialeId) {
-  if (meldung.filialeStatus?.[filialeId] === 'fertig') return 'fertig'
-  const eintraege = meldung.eintraege?.[filialeId] || {}
-  const anzahlMitMenge = Object.values(eintraege).filter((e) => Number(e?.menge) > 0).length
-  if (anzahlMitMenge > 0) return 'teilweise'
-  return 'offen'
-}
-
-function anzahlMitMenge(meldung, filialeId) {
-  const eintraege = meldung.eintraege?.[filialeId] || {}
-  return Object.values(eintraege).filter((e) => Number(e?.menge) > 0).length
-}
 
 export default function MeldungScreen({ meldungId }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
-  const filialen = getFilialen()
+  const meldungRef = useRef(meldung)
+  const artikelListe = getArtikel()
 
   if (!meldung) {
     return (
@@ -37,33 +29,89 @@ export default function MeldungScreen({ meldungId }) {
     )
   }
 
-  const fertigCount = filialen.filter((f) => filialeStatus(meldung, f.id) === 'fertig').length
+  // Die Meldung gehört zu genau einem Bezirk - Filialen kommen aus diesem Bezirk,
+  // nicht aus dem gerade aktiven. Sonst zeigt eine Archiv-Meldung fremde Filialen.
+  const profil = getProfiles().find((p) => p.id === meldung.profileId) || null
+  const filialen = profil?.filialen || []
+
+  function mutateMeldung(mutator) {
+    const next = mutator(meldungRef.current)
+    meldungRef.current = next
+    setMeldung(next)
+    saveMeldung(next)
+    return next
+  }
+
+  const fertigCount = filialen.filter(
+    (f) => getFilialeStatus(meldung, f.id, artikelListe) === 'fertig'
+  ).length
 
   function updateMonat(monat) {
-    const updated = { ...meldung, monat }
-    setMeldung(updated)
-    saveMeldung(updated)
+    if (!monat) return
+    const kollision = findMeldung(meldung.profileId, monat)
+    if (kollision && kollision.id !== meldung.id) {
+      alert(
+        `Für ${monat} gibt es in diesem Bezirk bereits eine Meldung. ` +
+          'Öffne sie über das Archiv, statt eine zweite anzulegen.'
+      )
+      return
+    }
+    mutateMeldung((m) => ({ ...m, monat }))
   }
 
   function vormonatLaden() {
-    const vorlage = getVormonatVorlage(meldung.monat)
+    const vorlage = getVormonatVorlage(meldung.monat, meldung.profileId)
     if (!vorlage) {
-      alert('Keine Meldung für den Vormonat gefunden.')
+      alert('Keine Meldung aus dem Vormonat für diesen Bezirk gefunden.')
       return
     }
-    const updated = { ...meldung, eintraege: vorlage }
-    setMeldung(updated)
-    saveMeldung(updated)
+
+    // Nur leere MHD-Felder befüllen. Bereits erfasste Daten und alle Mengen
+    // bleiben unangetastet.
+    let gefuellt = 0
+    mutateMeldung((m) => {
+      const eintraege = { ...(m.eintraege || {}) }
+      Object.entries(vorlage.mhdWerte).forEach(([filialeId, proFiliale]) => {
+        const bisher = { ...(eintraege[filialeId] || {}) }
+        Object.entries(proFiliale).forEach(([artikelId, mhd]) => {
+          const eintrag = bisher[artikelId]
+          if (eintrag?.mhd) return // nichts überschreiben
+          bisher[artikelId] = { menge: 0, ...(eintrag || {}), mhd }
+          gefuellt++
+        })
+        eintraege[filialeId] = bisher
+      })
+      return { ...m, eintraege }
+    })
+
+    alert(
+      gefuellt > 0
+        ? `${gefuellt} MHD-Vorschläge aus ${vorlage.monat} übernommen (nur leere Felder, Mengen unverändert).`
+        : `Aus ${vorlage.monat} gab es nichts zu übernehmen – alle Felder sind bereits gefüllt.`
+    )
   }
 
   async function handleExport() {
+    if (!filialen.length) {
+      alert('Dieser Bezirk hat keine Filialen. Lege sie in den Einstellungen an.')
+      return
+    }
+    if (!profil?.vlName || !profil?.nl) {
+      alert(
+        'Für diesen Bezirk fehlt der VL-Name oder die Niederlassung.\n' +
+          'Beides steht im Dateinamen und in Spalte A – bitte in den Einstellungen ergänzen.'
+      )
+      return
+    }
     if (fertigCount < filialen.length) {
+      const offen = filialen.length - fertigCount
       const weiter = confirm(
-        `Nur ${fertigCount} / ${filialen.length} Filialen erfasst. Trotzdem exportieren?`
+        `${offen} von ${filialen.length} Filialen sind noch nicht vollständig ` +
+          `(alle ${artikelListe.length} Artikel erfasst). Trotzdem exportieren?`
       )
       if (!weiter) return
     }
-    await exportMeldung(meldung, filialen)
+    await exportMeldung(meldung, filialen, profil)
   }
 
   return (
@@ -73,6 +121,10 @@ export default function MeldungScreen({ meldungId }) {
           ← Zurück
         </button>
         <h1>Meldung</h1>
+      </div>
+
+      <div className="muted" style={{ marginBottom: 12 }}>
+        Bezirk: {profil ? `${profil.name} · VL ${profil.vlName || '–'}` : 'unbekannt (gelöscht)'}
       </div>
 
       <div className="field">
@@ -85,16 +137,22 @@ export default function MeldungScreen({ meldungId }) {
       </div>
 
       <div className="progress">
-        {fertigCount} / {filialen.length} Filialen erfasst
+        {fertigCount} / {filialen.length} Filialen vollständig
       </div>
 
       <button className="btn secondary" onClick={vormonatLaden}>
-        Vormonat als Vorlage laden
+        Vormonat als MHD-Vorlage laden
       </button>
 
+      {filialen.length === 0 && (
+        <div className="warning-box">
+          Dieser Bezirk hat noch keine Filialen. Lege sie in den Einstellungen an.
+        </div>
+      )}
+
       {filialen.map((f) => {
-        const status = filialeStatus(meldung, f.id)
-        const count = anzahlMitMenge(meldung, f.id)
+        const status = getFilialeStatus(meldung, f.id, artikelListe)
+        const erledigt = countErledigt(meldung, f.id, artikelListe)
         return (
           <div
             className="card"
@@ -105,7 +163,9 @@ export default function MeldungScreen({ meldungId }) {
             <div className="card-row">
               <div>
                 <div style={{ fontWeight: 600 }}>Filiale {f.nummer}</div>
-                <div className="muted">{count} Artikel mit Menge</div>
+                <div className="muted">
+                  {erledigt} / {artikelListe.length} Artikel erfasst
+                </div>
               </div>
               <span className={`badge ${status}`}>{status}</span>
             </div>

@@ -1,5 +1,12 @@
+import { useState } from 'react'
 import { useNav } from '../NavContext.jsx'
-import { createMeldung, getMeldungen } from '../store.js'
+import {
+  createMeldung,
+  findMeldung,
+  getProfiles,
+  getActiveProfile,
+  setActiveProfileId,
+} from '../store.js'
 
 function currentMonat() {
   const now = new Date()
@@ -8,12 +15,20 @@ function currentMonat() {
 
 export default function HomeScreen() {
   const { navigate } = useNav()
+  const [profile, setProfile] = useState(() => getProfiles())
+  const [aktiv, setAktiv] = useState(() => getActiveProfile())
+
+  function wechsle(id) {
+    setActiveProfileId(id)
+    setAktiv(getActiveProfile())
+    setProfile(getProfiles())
+  }
 
   function neueMeldung() {
+    if (!aktiv) return
     const monat = currentMonat()
-    const alle = getMeldungen()
-    const existierende = alle.find((m) => m.monat === monat)
-    const meldung = existierende || createMeldung(monat)
+    const vorhandene = findMeldung(aktiv.id, monat)
+    const meldung = vorhandene || createMeldung(monat, aktiv.id)
     navigate('meldung', { meldungId: meldung.id })
   }
 
@@ -22,7 +37,38 @@ export default function HomeScreen() {
       <div className="header">
         <h1>FlopMelder</h1>
       </div>
-      <button className="btn" onClick={neueMeldung}>
+
+      {!aktiv && (
+        <div className="warning-box">
+          Noch kein Bezirk angelegt. Lege in den Einstellungen einen Bezirk mit Filialen an.
+        </div>
+      )}
+
+      {aktiv && (
+        <div className="card">
+          <div className="muted" style={{ marginBottom: 6 }}>Aktiver Bezirk</div>
+          {profile.length > 1 ? (
+            <select
+              value={aktiv.id}
+              onChange={(e) => wechsle(e.target.value)}
+              style={{ width: '100%', padding: 12, fontSize: 16, borderRadius: 10, border: '1px solid #ccc' }}
+            >
+              {profile.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name} · {p.vlName} · {p.filialen?.length || 0} Filialen
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div style={{ fontWeight: 600, fontSize: 17 }}>{aktiv.name}</div>
+          )}
+          <div className="muted" style={{ marginTop: 8 }}>
+            VL {aktiv.vlName || '–'} · NL {aktiv.nl || '–'} · {aktiv.filialen?.length || 0} Filialen
+          </div>
+        </div>
+      )}
+
+      <button className="btn" onClick={neueMeldung} disabled={!aktiv}>
         Neue Meldung
       </button>
       <button className="btn secondary" onClick={() => navigate('archiv')}>

@@ -3,7 +3,8 @@
 ## Projekt-Übersicht
 React PWA für Verkaufsleiter (VL) zur monatlichen Meldung der 15 "Flop"-Artikel
 (kürzestes MHD + Kolli-Menge) je Filiale, exportiert als .xlsx im festen Ziel-Layout.
-- **Repo:** edikpusch/flop-melder (privat)
+- **Repo:** edikpusch/Flopmelder (privat)
+- **Live:** https://flop-melder.vercel.app
 - **Stack:** React + Vite + ExcelJS + localStorage (kein Backend, keine weiteren Dependencies)
 - **Deploy:** Vercel (Auto-Deploy bei Push auf main)
 
@@ -16,12 +17,12 @@ React PWA für Verkaufsleiter (VL) zur monatlichen Meldung der 15 "Flop"-Artikel
 ```
 src/
   pages/
-    HomeScreen.jsx              ← Start: Neue Meldung / Archiv / Einstellungen
-    EinstellungenScreen.jsx     ← VL-Profil, Filialen- & Flop-15-Verwaltung
-    MeldungScreen.jsx           ← Kern: Filialen-Checkliste einer Meldung
-    FilialeErfassungScreen.jsx  ← Erfassung der 15 Artikel für 1 Filiale
-    ArchivScreen.jsx            ← Vergangene Meldungen, erneut exportieren
-  store.js                      ← localStorage-Zugriff (Profile, Filialen, Artikel, Meldungen)
+    HomeScreen.jsx              ← Start: aktiver Bezirk + Neue Meldung / Archiv / Einstellungen
+    EinstellungenScreen.jsx     ← Bezirke, Filialen des Bezirks, globale Flop-15-Liste
+    MeldungScreen.jsx           ← Filialen-Checkliste einer Meldung
+    FilialeErfassungScreen.jsx  ← Wizard: 15 Artikel einzeln für 1 Filiale
+    ArchivScreen.jsx            ← Vergangene Meldungen, erneut exportieren, löschen
+  store.js                      ← localStorage-Zugriff + abgeleiteter Status
   export.js                     ← ExcelJS-Export ins Ziel-Layout
   NavContext.jsx                ← einfaches State-basiertes Routing (kein react-router)
   App.jsx                       ← Screen-Switch je nach Route
@@ -30,134 +31,168 @@ src/
 
 ## Datenstruktur (localStorage)
 ```js
-// Key: 'fm_profile'
-{ vlName: 'Pusch', nl: 'Ganderkesee' }
+// Key: 'fm_profiles'  ← Bezirke. Ein Profil = ein Bezirk.
+[{
+  id, name,        // name = frei wählbare Bezeichnung, z.B. "Ganderkesee"
+  vlName, nl,      // landen im Export (Spalte A bzw. Dateiname)
+  filialen: [{ id, nummer }]   // Reihenfolge = Zeilenreihenfolge im Export
+}]
 
-// Key: 'fm_filialen'  (Reihenfolge relevant = Zeilenreihenfolge im Export)
-[{ id, nummer }]
+// Key: 'fm_active_profile'  ← id des aktiven Bezirks
 
-// Key: 'fm_artikel'  (Reihenfolge relevant = Spaltenreihenfolge im Export, 15 Stück)
+// Key: 'fm_artikel'  ← GLOBAL, gilt für alle Bezirke (firmenweit vorgegeben)
 [{ id, nummer, name }]  // nummer als String (Artikel 15 hat Doppelnummer "19255 / 408717")
+                        // Reihenfolge = Spaltenreihenfolge im Export
 
 // Key: 'fm_meldungen'
 [{
-  id, monat,           // "2026-07"
+  id, profileId,        // gehört zu genau einem Bezirk
+  monat,                // "2026-07"
   erstelltAm,           // ISO-String
-  status,               // 'offen' | 'fertig' (informell, siehe filialeStatus)
-  filialeStatus,        // { [filialeId]: 'fertig' } – gesetzt beim Speichern in FilialeErfassungScreen
-  eintraege,             // { [filialeId]: { [artikelId]: { mhd: string, menge: number } } }
-  filialeLastIndex,      // { [filialeId]: number } – zuletzt angesehener Artikel-Index (Wizard-Resume)
+  eintraege,            // { [filialeId]: { [artikelId]: { mhd, menge, erfasst } } }
+  filialeLastIndex,     // { [filialeId]: number } – zuletzt angesehener Artikel (Wizard-Resume)
 }]
 ```
-Beim App-Start seeden Store-Funktionen (`seedIfEmpty`) leere Keys mit den Stammdaten
-(VL "Pusch" / NL "Ganderkesee", 10 Filialen, 15 Flop-Artikel).
+
+**Kein `status`-Feld mehr.** Der frühere `meldung.status` wurde nie gelesen oder
+aktualisiert und ist entfernt. Es gibt bewusst **kein "eingereicht"-Konzept** – der
+Zustand einer Meldung wird immer aus den Einträgen abgeleitet (siehe unten).
+
+### Migration aus der Ein-Profil-Version
+`seedIfEmpty()` migriert einmalig die alten Keys `fm_profile` + `fm_filialen` in ein
+erstes Profil und hängt `profileId` an bestehende Meldungen. **Die Filial-IDs bleiben
+dabei erhalten**, sonst würden alle vorhandenen Einträge verwaisen. Die alten Keys
+werden nicht gelöscht (schadet nicht, dient als Sicherheitsnetz).
 
 ## Bekannte Eigenheiten & wichtige Regeln
 
-### Store-Funktionen (store.js)
-Alle Zugriffe laufen über benannte Exporte (`getProfile`, `saveProfile`, `getFilialen`,
-`saveFilialen`, `getArtikel`, `saveArtikel`, `resetArtikelToDefault`, `getMeldungen`,
-`getMeldung`, `saveMeldung`, `createMeldung`, `deleteMeldung`, `getVormonatVorlage`).
+### Schreibzugriffe: IMMER über mutateMeldung()
+In `FilialeErfassungScreen` und `MeldungScreen` laufen alle Änderungen über
+`mutateMeldung(mutator)`, das den neuesten Stand in einem `useRef` mitführt.
 
-### Routing (NavContext.jsx)
-Kein react-router (Spec: nur ExcelJS als zusätzliches Package). Einfacher State-Router
-über `useNav()` → `{ route, navigate(screen, params) }`. Screens: `home`, `einstellungen`,
-`meldung`, `filiale`, `archiv`.
+**Grund (echter Bug, der schon einmal live war):** `chooseMenge()` speichert erst die
+Menge und ruft dann im selben Handler `goTo()`. Baut `goTo` sein Objekt aus dem
+React-State auf, ist das noch der Stand *vor* der Menge – die gerade gesetzte Menge
+wird zurückgeschrieben auf 0. Das betraf 14 der 15 Artikel (nur der letzte, ohne
+Auto-Advance, überlebte) und der Export schrieb fast überall 0.
+**Niemals mehrere Änderungen im selben Handler direkt aus `meldung` ableiten.**
 
-### Filialen-Status (Checkliste)
-Da das Datenmodell keinen expliziten Status pro Filiale vorsieht, wird er aus
-`meldung.filialeStatus[filialeId]` (gesetzt beim "Speichern & zurück"/"Speichern & nächste
-Filiale") und den `eintraege` abgeleitet:
-- `offen`: kein `filialeStatus`-Eintrag, keine Menge > 0
-- `teilweise`: mind. 1 Menge > 0, aber nicht als "fertig" gespeichert
-- `fertig`: `filialeStatus[filialeId] === 'fertig'`
+### Abgeleiteter Status (nichts davon wird gespeichert)
+`store.js` liefert die Regeln, damit alle Screens dieselbe Wahrheit benutzen:
+- `istArtikelErledigt(eintrag)` → `erfasst === true || menge > 0`
+  (`menge > 0` ist der Rückwärtskompatibilitäts-Pfad für Daten von vor dem `erfasst`-Flag)
+- `getFilialeStatus(...)` → `offen` (0 erledigt) / `teilweise` / `fertig` (alle Artikel)
+- `istMeldungVollstaendig(...)` → alle Filialen `fertig`
+
+**Fertig-Regel:** Eine Filiale gilt erst als fertig, wenn **jeder** Artikel bewusst
+entschieden wurde. `erfasst: true` wird ausschließlich in `chooseMenge()` gesetzt –
+also beim Tippen auf einen Mengen-Button, **auch bei Menge 0** ("kein Bestand").
+Reines Weiterblättern mit "Weiter ›" zählt NICHT. Es gibt kein manuelles
+"als fertig markieren" mehr, das wäre sonst wieder umgehbar.
 
 ### Erfassungs-Flow (FilialeErfassungScreen.jsx) – Wizard statt Liste
-Analog zum MehrstundenManager-Prinzip wird **ein Artikel nach dem anderen** abgefragt
-(nicht alle 15 als lange Liste untereinander):
-- Große Artikel-Karte zeigt nur den aktuellen Artikel: Name, Nr., **MHD-Feld zuerst**,
-  danach Menge-Buttons (bewusste Reihenfolge, siehe unten)
-- Chip-Leiste oben (15 nummerierte Kreise, horizontal scrollbar) zeigt Fortschritt auf
-  einen Blick (grün = Menge > 0 erfasst, blauer Rahmen = aktueller Artikel) und erlaubt
-  direktes Springen zu jedem Artikel per Tap
-- **MHD zuerst, dann Menge:** Beim Betreten eines Artikels (Mount oder `currentIndex`-Wechsel)
-  wird das MHD-Feld automatisch fokussiert **und** der Text selektiert (`mhdInputRef`-Effekt),
-  Zahlentastatur öffnet sich sofort. Erst danach wird die Menge gewählt – das ist bewusst der
-  **letzte** Schritt pro Artikel: ein Tap auf einen Menge-Button entzieht dem Textfeld den
-  Fokus (schließt die Tastatur automatisch) und springt **immer** direkt zum nächsten Artikel
-  (`chooseMenge`), unabhängig vom gewählten Wert (auch bei `0`). Kein manuelles
-  Tastatur-Schließen mehr nötig, um "Weiter" zu erreichen
-- Navigation unten: "‹ Zurück" / "Weiter ›" zwischen Artikeln (für manuelles Vor-/Zurückblättern
-  ohne Menge zu ändern); beim letzten Artikel (Index `anzahlGesamt - 1`) werden diese durch die
-  bekannten "Speichern & zurück" / "Speichern & nächste Filiale" ersetzt
-- Zusätzlicher Textlink "✓ Filiale als fertig markieren & zurück" erlaubt jederzeit
-  frühzeitiges Abschließen, auch ohne alle 15 Artikel durchlaufen zu haben
-- **Resume-Position:** `meldung.filialeLastIndex[filialeId]` merkt sich den zuletzt
-  angesehenen Artikel-Index und wird bei jeder Navigation (`goTo`) aktualisiert. Beim
-  erneuten Öffnen der Filiale wird **dort fortgesetzt, nicht** beim "ersten Artikel mit
-  Menge 0" – ein Artikel kann ja bewusst auf 0 gesetzt worden sein (kein Bestand), das ist
-  nicht gleichbedeutend mit "noch nicht angesehen". Ohne gespeicherten Index (neue Filiale)
-  fällt die Logik auf "erster Artikel ohne Menge > 0" zurück
+Ein Artikel nach dem anderen, nicht alle 15 als lange Liste:
+- Große Artikel-Karte: Name, Nr., **MHD-Feld zuerst**, danach Menge-Buttons
+- Chip-Leiste oben (nummerierte Kreise, horizontal scrollbar): grün = erledigt,
+  blauer Rahmen = aktueller Artikel, Tap springt direkt hin
+- **MHD zuerst, dann Menge:** Beim Betreten eines Artikels wird das MHD-Feld
+  automatisch fokussiert **und** selektiert (`mhdInputRef`-Effekt auf `currentIndex`),
+  die Zahlentastatur öffnet sich sofort. Die Menge ist bewusst der **letzte** Schritt:
+  ein Tap auf einen Mengen-Button nimmt dem Textfeld den Fokus (Tastatur schließt sich
+  von selbst) und springt direkt zum nächsten Artikel. Kein manuelles Tastatur-Schließen
+- Unten "‹ Zurück" / "Weiter ›"; beim letzten Artikel "Nächste Filiale ›"
+- Solange etwas offen ist, listet ein Hinweis die fehlenden Artikelnummern
+- **Resume-Position:** `meldung.filialeLastIndex[filialeId]` wird bei jeder Navigation
+  (`goTo`) geschrieben. Beim erneuten Öffnen wird **dort** fortgesetzt, nicht beim
+  "ersten Artikel ohne Menge" – Menge 0 kann bewusst gewählt sein
 
 ### MHD-Feld
 Erlaubte Formate: `TT.MM.JJJJ`, `TT.MM.JJ`, `MM.JJJJ`, `MM.JJ` – **nie** als echtes Datum
 interpretieren, immer als Roh-String speichern.
 
-**Auto-Formatierung beim Tippen** (`FilialeErfassungScreen.jsx`): Da `TT.MM.JJ` und
-`MM.JJJJ` bei gleicher Ziffernanzahl (6) nicht automatisch unterscheidbar sind, gibt es
-pro Artikel einen Modus-Umschalter ("Tag" / "Monat"), dessen Zustand pro `artikelId` im
-`mhdModus`-State gemerkt wird (bleibt beim Zurück-/Vorspringen im Wizard erhalten):
-- `tag`-Modus: Zifferngruppen `[2,2,4]` → `TT.MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
-- `monat`-Modus: Zifferngruppen `[2,4]` → `MM.JJJJ` (kurzes Jahr durch früheres Stoppen möglich)
-- `formatMhdDigits(digits, modus)` setzt den Punkt automatisch, sobald ein Ziffernblock
-  voll ist (eager masking, wie ein Kreditkarten-Ablaufdatum-Feld)
-- Backspace wird per `onKeyDown` abgefangen und entfernt die letzte **Ziffer** (nicht nur
-  das letzte Zeichen), sonst „hängt“ das Löschen an einem automatisch gesetzten Punkt
-- Der Modus wird beim Laden aus der gespeicherten Punktanzahl abgeleitet
-  (`mhdModusAusWert`: 1 Punkt → `monat`, sonst `tag`) – wichtig bei Änderungen an dieser
-  Logik, damit alte Erfassungen beim erneuten Öffnen nicht falsch gruppiert werden
-- Der native Datepicker-Button setzt den Modus immer auf `tag` zurück (liefert volles Datum)
+**Auto-Formatierung beim Tippen:** Da `TT.MM.JJ` und `MM.JJJJ` bei gleicher Ziffernanzahl
+(6) nicht unterscheidbar sind, gibt es pro Artikel einen Modus-Umschalter ("Tag"/"Monat"),
+dessen Zustand pro `artikelId` im `mhdModus`-State liegt:
+- `tag`: Zifferngruppen `[2,2,4]` → `TT.MM.JJJJ` (kurzes Jahr durch früheres Stoppen)
+- `monat`: Zifferngruppen `[2,4]` → `MM.JJJJ`
+- `formatMhdDigits(digits, modus)` setzt Punkte automatisch, sobald ein Block voll ist
+- Backspace wird per `onKeyDown` abgefangen und entfernt die letzte **Ziffer** (sonst
+  „hängt" das Löschen an einem automatisch gesetzten Punkt)
+- Modus wird beim Laden aus der Punktanzahl abgeleitet (`mhdModusAusWert`)
+- Der native Datepicker setzt den Modus immer auf `tag` zurück
 
 ### Menge
-Tap-Buttons `0 / 0,5 / 1 / 1,5 / 2 / +`. Der `+`-Button öffnet ein kleines Zahlenfeld für
-andere Werte (z.B. 2,5 / 3) und zeigt danach den custom-Wert statt "+" an (Bestätigung mit
-"OK" verhält sich wie ein normaler Menge-Tap, siehe `submitCustom`/`chooseMenge`). Default = 0.
-Das MHD-Feld ist **immer sichtbar** (nicht mehr an Menge > 0 gekoppelt), da es im Wizard
-vor der Menge ausgefüllt wird.
+Tap-Buttons `0 / 0,5 / 1 / 1,5 / 2 / +`. Der `+`-Button öffnet ein Zahlenfeld für andere
+Werte (2,5 / 3) und zeigt danach den Wert statt "+" ("OK" verhält sich wie ein normaler
+Mengen-Tap). Das MHD-Feld ist **immer sichtbar**, nicht an Menge > 0 gekoppelt.
+
+### Stammdaten-Änderungen (bewusste Entscheidung: immer aktuell)
+Meldungen frieren ihre Stammdaten **nicht** ein – ein Nachdruck aus dem Archiv nutzt die
+heutige Filial-/Artikelliste. Damit das nicht in Datenverlust endet:
+- `resetArtikelToDefault()` **behält die IDs** bereits bekannter ArtikelNummern.
+  Vorher wurden neue UUIDs vergeben und **alle** bestehenden Einträge verwaisten
+  (Export schrieb still leer/0)
+- Löschen von Artikel/Filiale warnt via `countEintraegeFuerArtikel` /
+  `countEintraegeFuerFiliale`, wenn Daten dranhängen
+- Meldung-Screens lesen die Filialen aus **`meldung.profileId`**, nicht aus dem aktiven
+  Bezirk – sonst zeigt eine Archiv-Meldung fremde Filialen
 
 ### Vormonat als Vorlage (`getVormonatVorlage`)
-Sucht die neueste Meldung mit `monat` = Vormonat, übernimmt nur die `mhd`-Werte, setzt
-alle Mengen auf 0.
+Liefert `{ monat, mhdWerte }` des Vormonats **desselben Bezirks**. `vormonatLaden()`
+befüllt damit **nur leere** MHD-Felder und lässt alle Mengen und bereits erfassten Werte
+unangetastet. (Früher wurde `eintraege` komplett ersetzt – das löschte ohne Rückfrage
+alles bereits Erfasste.)
+
+### Doppelte Meldungen
+`findMeldung(profileId, monat)` verhindert zwei Meldungen für denselben Monat im selben
+Bezirk: "Neue Meldung" öffnet eine vorhandene, und der Monatswechsel im MeldungScreen
+bricht bei Kollision mit Hinweis ab.
 
 ## XLSX-Export (export.js)
+`exportMeldung(meldung, filialen, profil)` – VL-Name und NL kommen aus dem **Profil**.
 - **Sheet-Name:** exakt `Erfassung TS`
 - **Spalten:** `A` = VL, `B` = Filial Nr., je Artikel 2 Spalten (MHD | Menge) →
   15 × 2 = 30 Spalten, gesamt `A`–`AF` (32 Spalten)
 - **Zeile 2:** ab Spalte C je Artikel die ArtikelNr, über 2 Spalten gemerged & zentriert
-- **Zeile 3:** `A3`="VL", `B3`="Filial Nr.", ab C je Artikel der Artikelname gemerged & zentriert
+- **Zeile 3:** `A3`="VL", `B3`="Filial Nr.", ab C je Artikelname gemerged & zentriert
 - **Zeile 4:** je Artikel "kürzestes MHD" | "Menge"
-- **Datenzeilen ab Zeile 5:** eine Zeile pro Filiale in Stammdaten-Reihenfolge; VL-Name nur
-  in der ersten Datenzeile; MHD als Text (`numFmt = '@'`), Menge als Zahl (0 falls leer)
-- **Keine Formeln, keine Summenzeile** – alle Werte werden in JS vorberechnet
+- **Datenzeilen ab Zeile 5:** eine je Filiale in Stammdaten-Reihenfolge; VL-Name nur in
+  der ersten Datenzeile; MHD als Text (`numFmt = '@'`); Menge als Zahl (0 falls leer);
+  Filial-Nr. als **Zahl**, wenn rein numerisch (rechtsbündig wie im Original)
+- Leeres MHD bleibt eine **echte Leerzelle**, kein leerer String
+- **Keine Formeln, keine Summenzeile** – alle Werte in JS vorberechnet
 - **Dateiname:** `Flop 15 Artikel NL {NL} {VLName} {YYYY-MM}.xlsx`
-- Download läuft rein client-seitig über `Blob` + `URL.createObjectURL` (kein Backend)
+- Export bricht ab, wenn dem Bezirk VL-Name oder NL fehlt (stünde sonst leer im Dateinamen)
+- Download rein client-seitig über `Blob` + `URL.createObjectURL`
+
+### Export-Regressionstest
+Es gibt einen Node-Harness, der `export.js` mit gestubbtem localStorage/DOM real
+ausführt, die erzeugte .xlsx wieder einliest und ~27 Zellen/Merges/Typen prüft.
+Nach Änderungen an `export.js` oder am Datenmodell erneut laufen lassen. Import per
+`pathToFileURL` (Windows-Pfade brauchen echte `file://`-URLs), ExcelJS über
+`node_modules/exceljs/lib/exceljs.nodejs.js`.
 
 ## Bekannte Quirks / bitte beachten
-- **Dezimal-Komma:** Menge `0,5` wird aktuell als Zahl `0.5` geschrieben. Beim ersten
-  Export auf dem iPad (Docs@Work) prüfen, ob Komma korrekt angezeigt wird – falls nicht,
-  Menge alternativ als Text `"0,5"` schreiben (in `export.js`, `mengeCell.value`).
-- **MHD nie in ein echtes Datumsformat zwingen** – immer als Text (`numFmt = '@'`), damit
+- **Dezimal-Komma:** Menge `0,5` wird als Zahl `0.5` geschrieben. Beim ersten Export auf
+  dem iPad (Docs@Work) prüfen, ob das Komma korrekt erscheint – falls nicht, Menge
+  alternativ als Text `"0,5"` schreiben (`export.js`, `mengeCell.value`).
+- **MHD nie in ein echtes Datumsformat zwingen** – immer Text (`numFmt = '@'`), damit
   `08.26` (nur Monat) nicht umgedeutet wird.
-- **Merge-Zellen:** ArtikelNr (Zeile 2) und Name (Zeile 3) müssen über exakt die 2 Spalten
-  des jeweiligen Artikels gemerged werden, sonst verrutscht das Layout bei ungerader Anzahl.
-- **Kein react-router, kein DragList-Package** – nur ExcelJS als zusätzliche Dependency,
-  Reihenfolge-Änderung in Einstellungen läuft über Hoch/Runter-Buttons statt Drag & Drop.
+- **Merge-Zellen:** ArtikelNr (Zeile 2) und Name (Zeile 3) über exakt die 2 Spalten des
+  Artikels mergen, sonst verrutscht das Layout.
+- **Kein react-router, kein Drag&Drop-Package** – nur ExcelJS als zusätzliche Dependency,
+  Reihenfolge-Änderung über Hoch/Runter-Buttons.
+- **Mehrere Bezirke exportieren getrennt** (eine Datei je Bezirk). Falls die NL alle
+  Bezirke in einer Datei will: Spalte A ist bereits so angelegt (VL-Name nur in der
+  ersten Zeile seines Blocks), Blöcke ließen sich untereinander hängen.
 
 ## Häufige Fehler & Fixes
 
 | Fehler | Ursache | Fix |
 |--------|---------|-----|
-| MHD wird zu Datum umformatiert | Fehlendes `numFmt = '@'` auf der Zelle | Text-Format vor dem Setzen des Werts erzwingen |
-| Spalten verrutschen im Export | Merge-Range stimmt nicht mit `FIRST_ARTIKEL_COL + j*2` überein | Spaltenindex-Berechnung prüfen |
-| Filiale bleibt "offen" trotz Eingabe | `filialeStatus` wird nur beim Speichern gesetzt, nicht automatisch bei Menge > 0 | Das ist gewollt (siehe Checkliste-Logik oben) |
-| Reihenfolge Filialen/Artikel falsch im Export | `getFilialen()`/`getArtikel()` Reihenfolge nicht aktuell | Nach Reorder immer `saveFilialen`/`saveArtikel` aufrufen (passiert automatisch in EinstellungenScreen) |
+| Menge wird nicht gespeichert | Zweite Änderung im selben Handler baut auf React-State statt auf dem aktuellen Stand | Immer `mutateMeldung()` verwenden |
+| Alte Meldungen plötzlich leer | Artikel-/Filial-IDs neu vergeben | `resetArtikelToDefault` gleicht über `nummer` ab, IDs nie neu würfeln |
+| Archiv-Meldung zeigt fremde Filialen | Filialen aus dem aktiven statt aus `meldung.profileId` gelesen | Profil über `meldung.profileId` auflösen |
+| MHD wird zu Datum umformatiert | Fehlendes `numFmt = '@'` | Text-Format auf der Zelle setzen |
+| Spalten verrutschen im Export | Merge-Range passt nicht zu `FIRST_ARTIKEL_COL + j*2` | Spaltenindex-Berechnung prüfen |
+| Filiale bleibt "offen" trotz Eingabe | Nur MHD getippt, keine Menge gewählt | `erfasst` wird nur in `chooseMenge()` gesetzt – das ist gewollt |
