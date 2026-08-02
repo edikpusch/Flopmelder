@@ -56,6 +56,7 @@ function istErfasst(eintrag) {
 export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
+  const meldungRef = useRef(meldung)
   const filialen = getFilialen()
   const artikelListe = getArtikel()
 
@@ -118,15 +119,27 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     return meldung.eintraege?.[filialeId]?.[artikelId] || { mhd: '', menge: 0 }
   }
 
+  // ALLE Schreibzugriffe laufen hierüber. Der Ref hält immer den neuesten Stand,
+  // damit mehrere Änderungen im selben Event-Handler aufeinander aufbauen. Ohne das
+  // überschreibt z.B. goTo() die gerade in updateEintrag() gesetzte Menge, weil der
+  // React-State innerhalb eines Handlers noch der alte ist.
+  function mutateMeldung(mutator) {
+    const next = mutator(meldungRef.current)
+    meldungRef.current = next
+    setMeldung(next)
+    saveMeldung(next)
+    return next
+  }
+
   function updateEintrag(artikelId, patch) {
-    const eintraege = { ...(meldung.eintraege || {}) }
-    const filialeEintraege = { ...(eintraege[filialeId] || {}) }
-    const bisher = filialeEintraege[artikelId] || { mhd: '', menge: 0 }
-    filialeEintraege[artikelId] = { ...bisher, ...patch }
-    eintraege[filialeId] = filialeEintraege
-    const updated = { ...meldung, eintraege }
-    setMeldung(updated)
-    saveMeldung(updated)
+    mutateMeldung((m) => {
+      const eintraege = { ...(m.eintraege || {}) }
+      const filialeEintraege = { ...(eintraege[filialeId] || {}) }
+      const bisher = filialeEintraege[artikelId] || { mhd: '', menge: 0 }
+      filialeEintraege[artikelId] = { ...bisher, ...patch }
+      eintraege[filialeId] = filialeEintraege
+      return { ...m, eintraege }
+    })
   }
 
   function setMhd(artikelId, mhd) {
@@ -162,10 +175,10 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     const clamped = Math.max(0, Math.min(index, anzahlGesamt - 1))
     setCustomOpen(false)
     setCurrentIndex(clamped)
-    const filialeLastIndex = { ...(meldung.filialeLastIndex || {}), [filialeId]: clamped }
-    const updated = { ...meldung, filialeLastIndex }
-    setMeldung(updated)
-    saveMeldung(updated)
+    mutateMeldung((m) => ({
+      ...m,
+      filialeLastIndex: { ...(m.filialeLastIndex || {}), [filialeId]: clamped },
+    }))
   }
 
   function goNext() {
@@ -197,17 +210,20 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     chooseMenge(parseGermanNumber(customValue))
   }
 
+  function markFertig() {
+    mutateMeldung((m) => ({
+      ...m,
+      filialeStatus: { ...(m.filialeStatus || {}), [filialeId]: 'fertig' },
+    }))
+  }
+
   function markFertigUndZurueck() {
-    const filialeStatus = { ...(meldung.filialeStatus || {}), [filialeId]: 'fertig' }
-    const updated = { ...meldung, filialeStatus }
-    saveMeldung(updated)
+    markFertig()
     navigate('meldung', { meldungId: meldung.id })
   }
 
   function markFertigUndNaechste() {
-    const filialeStatus = { ...(meldung.filialeStatus || {}), [filialeId]: 'fertig' }
-    const updated = { ...meldung, filialeStatus }
-    saveMeldung(updated)
+    markFertig()
     const idx = filialen.findIndex((f) => f.id === filialeId)
     const naechste = filialen[idx + 1]
     if (naechste) {
