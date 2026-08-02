@@ -225,27 +225,65 @@ html, body {
   cursor: pointer;
 }
 
+/* 4er-Raster statt einer Reihe: 6 Mengen + eigene Eingabe wären nebeneinander
+   auf dem Handy zu schmal zum sicheren Treffen. So bleibt jede Fläche ~48px hoch. */
 .menge-buttons {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
   margin-bottom: 8px;
 }
 
 .menge-btn {
-  flex: 1;
-  padding: 10px 0;
-  border-radius: 8px;
+  min-height: 48px;
+  padding: 12px 0;
+  border-radius: 10px;
   border: 1px solid #ccc;
   background: #f7f7f7;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   cursor: pointer;
+}
+
+.menge-btn.custom {
+  grid-column: span 2;
+  font-size: 14px;
 }
 
 .menge-btn.active {
   background: #1d4ed8;
   border-color: #1d4ed8;
   color: white;
+}
+
+.custom-menge-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 10px;
+}
+
+.custom-menge-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  font-size: 17px;
+  border-radius: 10px;
+  border: 2px solid #1d4ed8;
+}
+
+.custom-ok-btn {
+  flex: 0 0 auto;
+  min-width: 72px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 10px;
+  border: none;
+  background: #1d4ed8;
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .mhd-row {
@@ -275,11 +313,23 @@ html, body {
   cursor: pointer;
 }
 
+/* Nur das Kalender-Symbol zeigen – der native Textteil ("tt.mm.jjjj") würde
+   hier abgeschnitten und doppelt neben dem eigenen MHD-Feld stehen. */
 .mhd-row input[type="date"] {
-  width: 44px;
+  flex: 0 0 34px;
+  width: 34px;
+  min-height: 44px;
   padding: 0;
   border: none;
   background: transparent;
+  color: transparent;
+}
+
+.mhd-row input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 0.55;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
 }
 
 .footer-actions {

@@ -126,9 +126,21 @@ dessen Zustand pro `artikelId` im `mhdModus`-State liegt:
 - Der native Datepicker setzt den Modus immer auf `tag` zurück
 
 ### Menge
-Tap-Buttons `0 / 0,5 / 1 / 1,5 / 2 / +`. Der `+`-Button öffnet ein Zahlenfeld für andere
-Werte (2,5 / 3) und zeigt danach den Wert statt "+" ("OK" verhält sich wie ein normaler
-Mengen-Tap). Das MHD-Feld ist **immer sichtbar**, nicht an Menge > 0 gekoppelt.
+Presets in 0,5er-Schritten: `0 / 0,5 / 1 / 1,5 / 2 / 2,5` plus "Eigene Eingabe".
+Letztere öffnet ein Zahlenfeld (`inputMode="decimal"`, autofokussiert) für alles darüber;
+"OK" bzw. Enter verhält sich wie ein normaler Mengen-Tap, springt also ebenfalls zum
+nächsten Artikel. Ist ein Nicht-Preset gesetzt, zeigt der Button den Wert statt der
+Beschriftung.
+
+**Layout ist bewusst ein 4-Spalten-Raster** (`.menge-buttons`), nicht eine Reihe: sieben
+Buttons nebeneinander wären auf einem 375px-Handy ~44px breit und kaum zu treffen. So
+sind es 71×48px, die "Eigene Eingabe" spannt über zwei Spalten.
+
+**Aktiv-Markierung nur wenn `erfasst`:** Ohne bewusste Wahl darf kein Button hervorgehoben
+sein – sonst sieht ein unberührter Artikel so aus, als wäre die 0 bereits gewählt worden
+(`istErfasst && menge === preset`).
+
+Das MHD-Feld ist **immer sichtbar**, nicht an Menge > 0 gekoppelt.
 
 ### Stammdaten-Änderungen (bewusste Entscheidung: immer aktuell)
 Meldungen frieren ihre Stammdaten **nicht** ein – ein Nachdruck aus dem Archiv nutzt die

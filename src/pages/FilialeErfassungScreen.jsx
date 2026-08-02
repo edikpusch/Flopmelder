@@ -8,7 +8,7 @@ import {
   istArtikelErledigt,
 } from '../store.js'
 
-const MENGE_PRESETS = [0, 0.5, 1, 1.5, 2]
+const MENGE_PRESETS = [0, 0.5, 1, 1.5, 2, 2.5]
 
 function parseGermanNumber(str) {
   const n = Number(String(str).replace(',', '.'))
@@ -239,6 +239,9 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
 
   const eintrag = getEintrag(artikel.id)
   const menge = Number(eintrag.menge) || 0
+  // Ohne bewusste Wahl darf keine Menge markiert sein - sonst sieht ein unberührter
+  // Artikel so aus, als wäre die 0 bereits gewählt worden.
+  const istErfasst = istArtikelErledigt(eintrag)
   const isPreset = MENGE_PRESETS.includes(menge)
   const istLetzterArtikel = currentIndex === anzahlGesamt - 1
   const erledigteArtikel = artikelListe.filter((a) => istArtikelErledigt(getEintrag(a.id)))
@@ -309,34 +312,40 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
           {MENGE_PRESETS.map((preset) => (
             <button
               key={preset}
-              className={`menge-btn ${menge === preset ? 'active' : ''}`}
+              className={`menge-btn ${istErfasst && menge === preset ? 'active' : ''}`}
               onClick={() => chooseMenge(preset)}
             >
               {formatMenge(preset)}
             </button>
           ))}
-          <button className={`menge-btn ${!isPreset ? 'active' : ''}`} onClick={openCustom}>
-            {!isPreset && menge > 0 ? formatMenge(menge) : '+'}
+          <button
+            className={`menge-btn custom ${istErfasst && !isPreset ? 'active' : ''}`}
+            onClick={openCustom}
+          >
+            {istErfasst && !isPreset ? formatMenge(menge) : 'Eigene Eingabe'}
           </button>
         </div>
 
         {customOpen && (
-          <div className="mhd-row" style={{ marginBottom: 0 }}>
+          <div className="custom-menge-row">
             <input
               type="text"
               inputMode="decimal"
-              placeholder="z.B. 2,5"
+              placeholder="z.B. 3 oder 4,5"
               value={customValue}
               onChange={(e) => setCustomValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitCustom()
+              }}
               autoFocus
             />
-            <button className="btn small" style={{ width: 'auto', margin: 0 }} onClick={submitCustom}>
+            <button className="custom-ok-btn" onClick={submitCustom}>
               OK
             </button>
           </div>
         )}
 
-        {!istArtikelErledigt(eintrag) && (
+        {!istErfasst && (
           <div className="muted" style={{ marginTop: 10 }}>
             Noch nicht erfasst – wähle eine Menge (auch 0 zählt).
           </div>
