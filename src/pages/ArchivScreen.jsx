@@ -7,7 +7,9 @@ import {
   getArtikel,
   getActiveProfileId,
   istMeldungVollstaendig,
+  profilLabel,
 } from '../store.js'
+import { monatLabel } from './HomeScreen.jsx'
 import { exportMeldung } from '../export.js'
 
 export default function ArchivScreen() {
@@ -30,7 +32,7 @@ export default function ArchivScreen() {
     e.stopPropagation()
     const profil = profilVon(meldung)
     if (!profil) {
-      alert('Der Bezirk zu dieser Meldung wurde gelöscht – Export nicht möglich.')
+      alert('Das Profil zu dieser Meldung wurde gelöscht – Export nicht möglich.')
       return
     }
     await exportMeldung(meldung, profil.filialen || [], profil)
@@ -40,7 +42,7 @@ export default function ArchivScreen() {
     e.stopPropagation()
     const profil = profilVon(meldung)
     const ok = confirm(
-      `Meldung ${meldung.monat}${profil ? ` (${profil.name})` : ''} endgültig löschen?\n` +
+      `Meldung ${monatLabel(meldung.monat)}${profil ? ` (${profilLabel(profil)})` : ''} endgültig löschen?\n` +
         'Alle erfassten MHD- und Mengenwerte gehen dabei verloren.'
     )
     if (!ok) return
@@ -59,7 +61,7 @@ export default function ArchivScreen() {
 
       {profile.length > 1 && (
         <button className="btn secondary" onClick={() => setNurAktiver((v) => !v)}>
-          {nurAktiver ? 'Alle Bezirke anzeigen' : 'Nur aktiven Bezirk anzeigen'}
+          {nurAktiver ? 'Alle Profile anzeigen' : 'Nur aktives Profil anzeigen'}
         </button>
       )}
 
@@ -78,9 +80,9 @@ export default function ArchivScreen() {
           >
             <div className="card-row">
               <div>
-                <div style={{ fontWeight: 600 }}>{m.monat}</div>
+                <div style={{ fontWeight: 600 }}>{monatLabel(m.monat)}</div>
                 <div className="muted">
-                  {profil ? profil.name : 'Bezirk gelöscht'} · erstellt{' '}
+                  {profil ? profilLabel(profil) : 'Profil gelöscht'} · erstellt{' '}
                   {new Date(m.erstelltAm).toLocaleDateString('de-DE')}
                 </div>
               </div>

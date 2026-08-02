@@ -1,9 +1,10 @@
 // localStorage-Zugriff für FlopMelder
 // Keys: fm_profiles, fm_active_profile, fm_artikel, fm_meldungen
 //
-// Ein "Profil" ist ein Bezirk: eigener VL-Name, eigene NL, eigene Filialliste.
-// Die Flop-15-Artikelliste ist bewusst GLOBAL (firmenweit vorgegeben) und liegt
-// deshalb nicht im Profil.
+// Ein Profil = VL-Name + Niederlassung + eigene Filialliste. Identifiziert wird es
+// über den VL-Namen, ein zusätzliches Bezeichnungsfeld gibt es bewusst nicht.
+// Die Flop-15-Artikelliste ist GLOBAL (in allen Filialen dieselbe Reihenfolge) und
+// liegt deshalb nicht im Profil.
 
 const KEY_PROFILES = 'fm_profiles'
 const KEY_ACTIVE_PROFILE = 'fm_active_profile'
@@ -85,7 +86,6 @@ export function seedIfEmpty() {
 
     const profil = {
       id: makeId(),
-      name: legacyProfile?.nl || DEFAULT_NL,
       vlName: legacyProfile?.vlName || DEFAULT_VL,
       nl: legacyProfile?.nl || DEFAULT_NL,
       filialen: Array.isArray(legacyFilialen) && legacyFilialen.length
@@ -105,12 +105,27 @@ export function seedIfEmpty() {
     }
   }
 
-  // Aktives Profil absichern (z.B. wenn es gelöscht wurde)
+  // Profile aus einer Zwischenversion hatten ein separates 'name'-Feld.
+  // Wenn dabei kein VL-Name gesetzt wurde, dient der alte Name als VL-Name.
   const profile = getProfiles()
-  const aktiv = localStorage.getItem(KEY_ACTIVE_PROFILE)
-  if (profile.length && !profile.some((p) => p.id === aktiv)) {
-    writeJson(KEY_ACTIVE_PROFILE, profile[0].id)
+  if (profile.some((p) => !p.vlName && p.name)) {
+    saveProfiles(profile.map((p) => (p.vlName || !p.name ? p : { ...p, vlName: p.name })))
   }
+
+  // Aktives Profil absichern (z.B. wenn es gelöscht wurde)
+  const aktuelle = getProfiles()
+  const aktiv = readJson(KEY_ACTIVE_PROFILE, null)
+  if (aktuelle.length && !aktuelle.some((p) => p.id === aktiv)) {
+    writeJson(KEY_ACTIVE_PROFILE, aktuelle[0].id)
+  }
+}
+
+// Anzeigename eines Profils - es gibt kein eigenes Bezeichnungsfeld mehr
+export function profilLabel(profil) {
+  if (!profil) return ''
+  const teile = [profil.vlName || 'ohne VL-Name']
+  if (profil.nl) teile.push(profil.nl)
+  return teile.join(' · ')
 }
 
 // --- Profile (Bezirke) ---
@@ -146,10 +161,9 @@ export function saveProfile(profil) {
   return profil
 }
 
-export function createProfile({ name, vlName, nl, mitStandardFilialen = false } = {}) {
+export function createProfile({ vlName, nl, mitStandardFilialen = false } = {}) {
   const profil = {
     id: makeId(),
-    name: name || 'Neuer Bezirk',
     vlName: vlName || '',
     nl: nl || '',
     filialen: mitStandardFilialen ? defaultFilialen() : [],
@@ -158,7 +172,7 @@ export function createProfile({ name, vlName, nl, mitStandardFilialen = false } 
   return profil
 }
 
-// Löscht den Bezirk samt seiner Meldungen (sonst blieben verwaiste Meldungen liegen)
+// Löscht das Profil samt seiner Meldungen (sonst blieben verwaiste Meldungen liegen)
 export function deleteProfile(id) {
   const rest = getProfiles().filter((p) => p.id !== id)
   saveProfiles(rest)

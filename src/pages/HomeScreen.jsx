@@ -6,6 +6,7 @@ import {
   getProfiles,
   getActiveProfile,
   setActiveProfileId,
+  profilLabel,
 } from '../store.js'
 
 function currentMonat() {
@@ -13,10 +14,23 @@ function currentMonat() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+export function monatLabel(monat) {
+  const [jahr, m] = String(monat || '').split('-').map(Number)
+  if (!jahr || !m) return monat || ''
+  const namen = [
+    'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
+    'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember',
+  ]
+  return `${namen[m - 1]} ${jahr}`
+}
+
 export default function HomeScreen() {
   const { navigate } = useNav()
   const [profile, setProfile] = useState(() => getProfiles())
   const [aktiv, setAktiv] = useState(() => getActiveProfile())
+
+  const monat = currentMonat()
+  const laufende = aktiv ? findMeldung(aktiv.id, monat) : null
 
   function wechsle(id) {
     setActiveProfileId(id)
@@ -24,11 +38,11 @@ export default function HomeScreen() {
     setProfile(getProfiles())
   }
 
+  // Jeder Monat ist eine eigene Meldung. Existiert die des laufenden Monats
+  // schon, wird sie fortgesetzt statt eine zweite anzulegen.
   function neueMeldung() {
     if (!aktiv) return
-    const monat = currentMonat()
-    const vorhandene = findMeldung(aktiv.id, monat)
-    const meldung = vorhandene || createMeldung(monat, aktiv.id)
+    const meldung = laufende || createMeldung(monat, aktiv.id)
     navigate('meldung', { meldungId: meldung.id })
   }
 
@@ -40,13 +54,14 @@ export default function HomeScreen() {
 
       {!aktiv && (
         <div className="warning-box">
-          Noch kein Bezirk angelegt. Lege in den Einstellungen einen Bezirk mit Filialen an.
+          Noch kein Profil angelegt. Lege in den Einstellungen ein Profil mit VL-Name
+          und Filialnummern an.
         </div>
       )}
 
       {aktiv && (
         <div className="card">
-          <div className="muted" style={{ marginBottom: 6 }}>Aktiver Bezirk</div>
+          <div className="muted" style={{ marginBottom: 6 }}>Aktives Profil</div>
           {profile.length > 1 ? (
             <select
               value={aktiv.id}
@@ -55,21 +70,21 @@ export default function HomeScreen() {
             >
               {profile.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name} · {p.vlName} · {p.filialen?.length || 0} Filialen
+                  {profilLabel(p)} · {p.filialen?.length || 0} Filialen
                 </option>
               ))}
             </select>
           ) : (
-            <div style={{ fontWeight: 600, fontSize: 17 }}>{aktiv.name}</div>
+            <div style={{ fontWeight: 600, fontSize: 17 }}>{profilLabel(aktiv)}</div>
           )}
           <div className="muted" style={{ marginTop: 8 }}>
-            VL {aktiv.vlName || '–'} · NL {aktiv.nl || '–'} · {aktiv.filialen?.length || 0} Filialen
+            {aktiv.filialen?.length || 0} Filialen
           </div>
         </div>
       )}
 
       <button className="btn" onClick={neueMeldung} disabled={!aktiv}>
-        Neue Meldung
+        {laufende ? `Meldung ${monatLabel(monat)} fortsetzen` : `Meldung ${monatLabel(monat)} starten`}
       </button>
       <button className="btn secondary" onClick={() => navigate('archiv')}>
         Archiv

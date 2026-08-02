@@ -242,10 +242,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const isPreset = MENGE_PRESETS.includes(menge)
   const istLetzterArtikel = currentIndex === anzahlGesamt - 1
   const erledigteArtikel = artikelListe.filter((a) => istArtikelErledigt(getEintrag(a.id)))
-  const offeneNummern = artikelListe
-    .map((a, i) => (istArtikelErledigt(getEintrag(a.id)) ? null : i + 1))
-    .filter(Boolean)
-  const alleErledigt = offeneNummern.length === 0
 
   return (
     <div className="screen">
@@ -348,11 +344,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
       </div>
 
       <div className="footer-actions">
-        {!alleErledigt && (
-          <div className="warning-box">
-            Noch offen: Artikel {offeneNummern.join(', ')}
-          </div>
-        )}
         {!istLetzterArtikel && (
           <div className="wizard-nav">
             <button className="btn secondary" onClick={goPrev} disabled={currentIndex === 0}>

@@ -6,10 +6,11 @@ import {
   getArtikel,
   getProfiles,
   getVormonatVorlage,
-  findMeldung,
   countErledigt,
   getFilialeStatus,
+  profilLabel,
 } from '../store.js'
+import { monatLabel } from './HomeScreen.jsx'
 import { exportMeldung } from '../export.js'
 
 export default function MeldungScreen({ meldungId }) {
@@ -29,7 +30,7 @@ export default function MeldungScreen({ meldungId }) {
     )
   }
 
-  // Die Meldung gehört zu genau einem Bezirk - Filialen kommen aus diesem Bezirk,
+  // Die Meldung gehört zu genau einem Profil - Filialen kommen aus diesem Profil,
   // nicht aus dem gerade aktiven. Sonst zeigt eine Archiv-Meldung fremde Filialen.
   const profil = getProfiles().find((p) => p.id === meldung.profileId) || null
   const filialen = profil?.filialen || []
@@ -46,28 +47,15 @@ export default function MeldungScreen({ meldungId }) {
     (f) => getFilialeStatus(meldung, f.id, artikelListe) === 'fertig'
   ).length
 
-  function updateMonat(monat) {
-    if (!monat) return
-    const kollision = findMeldung(meldung.profileId, monat)
-    if (kollision && kollision.id !== meldung.id) {
-      alert(
-        `Für ${monat} gibt es in diesem Bezirk bereits eine Meldung. ` +
-          'Öffne sie über das Archiv, statt eine zweite anzulegen.'
-      )
-      return
-    }
-    mutateMeldung((m) => ({ ...m, monat }))
-  }
-
+  // Bewusste Option: standardmäßig startet jeder Monat leer. Übernommen werden
+  // nur MHD-Werte in noch leere Felder - Mengen niemals, die gelten nur für ihren Monat.
   function vormonatLaden() {
     const vorlage = getVormonatVorlage(meldung.monat, meldung.profileId)
     if (!vorlage) {
-      alert('Keine Meldung aus dem Vormonat für diesen Bezirk gefunden.')
+      alert('Keine Meldung aus dem Vormonat für dieses Profil gefunden.')
       return
     }
 
-    // Nur leere MHD-Felder befüllen. Bereits erfasste Daten und alle Mengen
-    // bleiben unangetastet.
     let gefuellt = 0
     mutateMeldung((m) => {
       const eintraege = { ...(m.eintraege || {}) }
@@ -86,20 +74,21 @@ export default function MeldungScreen({ meldungId }) {
 
     alert(
       gefuellt > 0
-        ? `${gefuellt} MHD-Vorschläge aus ${vorlage.monat} übernommen (nur leere Felder, Mengen unverändert).`
-        : `Aus ${vorlage.monat} gab es nichts zu übernehmen – alle Felder sind bereits gefüllt.`
+        ? `${gefuellt} MHD-Werte aus ${monatLabel(vorlage.monat)} übernommen. ` +
+            'Mengen bleiben leer und müssen neu erfasst werden.'
+        : `Aus ${monatLabel(vorlage.monat)} gab es nichts zu übernehmen.`
     )
   }
 
   async function handleExport() {
     if (!filialen.length) {
-      alert('Dieser Bezirk hat keine Filialen. Lege sie in den Einstellungen an.')
+      alert('Dieses Profil hat keine Filialen. Lege sie in den Einstellungen an.')
       return
     }
     if (!profil?.vlName || !profil?.nl) {
       alert(
-        'Für diesen Bezirk fehlt der VL-Name oder die Niederlassung.\n' +
-          'Beides steht im Dateinamen und in Spalte A – bitte in den Einstellungen ergänzen.'
+        'Für dieses Profil fehlt der VL-Name oder die Niederlassung.\n' +
+          'Beides steht im Dateinamen bzw. in Spalte A – bitte in den Einstellungen ergänzen.'
       )
       return
     }
@@ -120,20 +109,11 @@ export default function MeldungScreen({ meldungId }) {
         <button className="btn ghost" onClick={() => navigate('home')}>
           ← Zurück
         </button>
-        <h1>Meldung</h1>
+        <h1>{monatLabel(meldung.monat)}</h1>
       </div>
 
       <div className="muted" style={{ marginBottom: 12 }}>
-        Bezirk: {profil ? `${profil.name} · VL ${profil.vlName || '–'}` : 'unbekannt (gelöscht)'}
-      </div>
-
-      <div className="field">
-        <label>Monat</label>
-        <input
-          type="month"
-          value={meldung.monat}
-          onChange={(e) => updateMonat(e.target.value)}
-        />
+        {profil ? profilLabel(profil) : 'Profil gelöscht'}
       </div>
 
       <div className="progress">
@@ -141,12 +121,12 @@ export default function MeldungScreen({ meldungId }) {
       </div>
 
       <button className="btn secondary" onClick={vormonatLaden}>
-        Vormonat als MHD-Vorlage laden
+        MHD aus Vormonat übernehmen
       </button>
 
       {filialen.length === 0 && (
         <div className="warning-box">
-          Dieser Bezirk hat noch keine Filialen. Lege sie in den Einstellungen an.
+          Dieses Profil hat noch keine Filialen. Lege sie in den Einstellungen an.
         </div>
       )}
 

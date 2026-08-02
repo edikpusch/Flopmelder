@@ -16,6 +16,7 @@ import {
   resetArtikelToDefault,
   countEintraegeFuerArtikel,
   countEintraegeFuerFiliale,
+  profilLabel,
   makeId,
 } from '../store.js'
 
@@ -60,24 +61,24 @@ export default function EinstellungenScreen() {
     refreshProfile()
   }
 
-  function bezirkAnlegen() {
-    const name = prompt('Name des neuen Bezirks?')
-    if (!name?.trim()) return
+  function profilAnlegen() {
+    const vlName = prompt('VL-Name für das neue Profil?')
+    if (!vlName?.trim()) return
     const mitStandard = confirm(
-      'Standard-Filialliste (2233, 2239, …) in den neuen Bezirk übernehmen?\n' +
-        'Abbrechen = leer starten.'
+      'Standard-Filialliste (2233, 2239, …) in das neue Profil übernehmen?\n' +
+        'Abbrechen = ohne Filialen starten.'
     )
-    const neu = createProfile({ name: name.trim(), mitStandardFilialen: mitStandard })
+    const neu = createProfile({ vlName: vlName.trim(), mitStandardFilialen: mitStandard })
     setActiveProfileId(neu.id)
     refreshProfile()
   }
 
-  function bezirkLoeschen(p) {
+  function profilLoeschen(p) {
     const anzahl = countMeldungenForProfile(p.id)
     const ok = confirm(
-      `Bezirk "${p.name}" löschen?` +
+      `Profil "${profilLabel(p)}" löschen?` +
         (anzahl > 0
-          ? `\n\nAchtung: ${anzahl} Meldung(en) dieses Bezirks werden mitgelöscht.`
+          ? `\n\nAchtung: ${anzahl} Meldung(en) dieses Profils werden mitgelöscht.`
           : '')
     )
     if (!ok) return
@@ -167,51 +168,43 @@ export default function EinstellungenScreen() {
         <h1>Einstellungen</h1>
       </div>
 
-      <h2>Bezirke</h2>
+      <h2>Profile</h2>
       {profile.map((p) => (
         <div className="list-item" key={p.id}>
           <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
             <input
               type="radio"
-              name="aktiverBezirk"
+              name="aktivesProfil"
               checked={p.id === aktiv?.id}
               onChange={() => wechsle(p.id)}
             />
             <span>
-              <span style={{ fontWeight: 600 }}>{p.name}</span>
+              <span style={{ fontWeight: 600 }}>{profilLabel(p)}</span>
               <span className="muted" style={{ display: 'block' }}>
-                VL {p.vlName || '–'} · NL {p.nl || '–'} · {p.filialen?.length || 0} Filialen
+                {p.filialen?.length || 0} Filialen
               </span>
             </span>
           </label>
           <div className="actions">
             <button
               className="icon-btn"
-              onClick={() => bezirkLoeschen(p)}
+              onClick={() => profilLoeschen(p)}
               disabled={profile.length <= 1}
-              title={profile.length <= 1 ? 'Der letzte Bezirk kann nicht gelöscht werden' : 'Bezirk löschen'}
+              title={profile.length <= 1 ? 'Das letzte Profil kann nicht gelöscht werden' : 'Profil löschen'}
             >
               🗑
             </button>
           </div>
         </div>
       ))}
-      <button className="btn secondary" onClick={bezirkAnlegen}>
-        + Neuer Bezirk
+      <button className="btn secondary" onClick={profilAnlegen}>
+        + Neues Profil
       </button>
 
       {aktiv && (
         <>
-          <h2>Bezirk „{aktiv.name}"</h2>
+          <h2>Profil „{profilLabel(aktiv)}"</h2>
           <div className="card">
-            <div className="field">
-              <label>Bezeichnung</label>
-              <input
-                type="text"
-                value={aktiv.name}
-                onChange={(e) => updateAktiv('name', e.target.value)}
-              />
-            </div>
             <div className="field">
               <label>VL-Name</label>
               <input
@@ -273,7 +266,7 @@ export default function EinstellungenScreen() {
 
       <h2>Flop-15-Artikel</h2>
       <div className="muted" style={{ marginBottom: 8 }}>
-        Gilt für alle Bezirke · Reihenfolge = Spaltenreihenfolge im Export
+        Gilt für alle Profile und Filialen · Reihenfolge = Spaltenreihenfolge im Export
       </div>
       {artikel.map((a, i) => (
         <div className="list-item" key={a.id}>

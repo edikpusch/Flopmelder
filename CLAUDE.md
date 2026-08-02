@@ -17,8 +17,8 @@ React PWA für Verkaufsleiter (VL) zur monatlichen Meldung der 15 "Flop"-Artikel
 ```
 src/
   pages/
-    HomeScreen.jsx              ← Start: aktiver Bezirk + Neue Meldung / Archiv / Einstellungen
-    EinstellungenScreen.jsx     ← Bezirke, Filialen des Bezirks, globale Flop-15-Liste
+    HomeScreen.jsx              ← Start: aktives Profil + Meldung starten / Archiv / Einstellungen
+    EinstellungenScreen.jsx     ← Profile, Filialen des Profils, globale Flop-15-Liste
     MeldungScreen.jsx           ← Filialen-Checkliste einer Meldung
     FilialeErfassungScreen.jsx  ← Wizard: 15 Artikel einzeln für 1 Filiale
     ArchivScreen.jsx            ← Vergangene Meldungen, erneut exportieren, löschen
@@ -31,22 +31,25 @@ src/
 
 ## Datenstruktur (localStorage)
 ```js
-// Key: 'fm_profiles'  ← Bezirke. Ein Profil = ein Bezirk.
+// Key: 'fm_profiles'  ← Ein Profil = VL + NL + eigene Filialliste.
 [{
-  id, name,        // name = frei wählbare Bezeichnung, z.B. "Ganderkesee"
+  id,
   vlName, nl,      // landen im Export (Spalte A bzw. Dateiname)
   filialen: [{ id, nummer }]   // Reihenfolge = Zeilenreihenfolge im Export
 }]
+// KEIN separates Bezeichnungsfeld - der Anzeigename kommt aus profilLabel(p)
+// ("VL · NL"). Eine ältere Zwischenversion hatte ein 'name'-Feld; seedIfEmpty
+// übernimmt es als vlName, falls dieser leer ist.
 
-// Key: 'fm_active_profile'  ← id des aktiven Bezirks
+// Key: 'fm_active_profile'  ← id des aktiven Profils
 
-// Key: 'fm_artikel'  ← GLOBAL, gilt für alle Bezirke (firmenweit vorgegeben)
+// Key: 'fm_artikel'  ← GLOBAL, gilt für alle Profile (firmenweit vorgegeben)
 [{ id, nummer, name }]  // nummer als String (Artikel 15 hat Doppelnummer "19255 / 408717")
                         // Reihenfolge = Spaltenreihenfolge im Export
 
 // Key: 'fm_meldungen'
 [{
-  id, profileId,        // gehört zu genau einem Bezirk
+  id, profileId,        // gehört zu genau einem Profil
   monat,                // "2026-07"
   erstelltAm,           // ISO-String
   eintraege,            // { [filialeId]: { [artikelId]: { mhd, menge, erfasst } } }
@@ -101,7 +104,8 @@ Ein Artikel nach dem anderen, nicht alle 15 als lange Liste:
   ein Tap auf einen Mengen-Button nimmt dem Textfeld den Fokus (Tastatur schließt sich
   von selbst) und springt direkt zum nächsten Artikel. Kein manuelles Tastatur-Schließen
 - Unten "‹ Zurück" / "Weiter ›"; beim letzten Artikel "Nächste Filiale ›"
-- Solange etwas offen ist, listet ein Hinweis die fehlenden Artikelnummern
+- Der Fortschritt steht nur in der Kopfzeile und in den Chips – eine gelbe Box mit den
+  offenen Artikelnummern gab es kurzzeitig, sie wurde auf Wunsch wieder entfernt
 - **Resume-Position:** `meldung.filialeLastIndex[filialeId]` wird bei jeder Navigation
   (`goTo`) geschrieben. Beim erneuten Öffnen wird **dort** fortgesetzt, nicht beim
   "ersten Artikel ohne Menge" – Menge 0 kann bewusst gewählt sein
@@ -135,18 +139,22 @@ heutige Filial-/Artikelliste. Damit das nicht in Datenverlust endet:
 - Löschen von Artikel/Filiale warnt via `countEintraegeFuerArtikel` /
   `countEintraegeFuerFiliale`, wenn Daten dranhängen
 - Meldung-Screens lesen die Filialen aus **`meldung.profileId`**, nicht aus dem aktiven
-  Bezirk – sonst zeigt eine Archiv-Meldung fremde Filialen
+  Profil – sonst zeigt eine Archiv-Meldung fremde Filialen
 
-### Vormonat als Vorlage (`getVormonatVorlage`)
-Liefert `{ monat, mhdWerte }` des Vormonats **desselben Bezirks**. `vormonatLaden()`
-befüllt damit **nur leere** MHD-Felder und lässt alle Mengen und bereits erfassten Werte
-unangetastet. (Früher wurde `eintraege` komplett ersetzt – das löschte ohne Rückfrage
-alles bereits Erfasste.)
+### Jeder Monat ist eine eigene, leere Meldung
+Der Monat gehört **fest** zur Meldung und ist nachträglich **nicht änderbar** (früher gab
+es ein `<input type="month">` im MeldungScreen – beim Umstellen wanderten die Eingaben
+mit, was "jeder Monat ist eine neue Eingabe" widersprach).
+- Der Startbildschirm-Button arbeitet immer auf dem **laufenden** Monat und beschriftet
+  sich je nach Lage mit "starten" oder "fortsetzen"
+- `findMeldung(profileId, monat)` sorgt dafür, dass es pro Monat und Profil genau eine
+  Meldung gibt: existiert sie, wird sie fortgesetzt statt eine zweite anzulegen
+- Ein neuer Monat startet damit garantiert leer; alle MHDs werden neu erfasst
 
-### Doppelte Meldungen
-`findMeldung(profileId, monat)` verhindert zwei Meldungen für denselben Monat im selben
-Bezirk: "Neue Meldung" öffnet eine vorhandene, und der Monatswechsel im MeldungScreen
-bricht bei Kollision mit Hinweis ab.
+**Ausnahme auf Wunsch:** "MHD aus Vormonat übernehmen" (`getVormonatVorlage` →
+`vormonatLaden`) füllt **nur leere** MHD-Felder aus dem Vormonat desselben Profils.
+Mengen werden **nie** übernommen und bereits erfasste Werte nie überschrieben – die
+Artikel gelten dadurch auch nicht als erfasst (`erfasst` wird nicht gesetzt).
 
 ## XLSX-Export (export.js)
 `exportMeldung(meldung, filialen, profil)` – VL-Name und NL kommen aus dem **Profil**.
@@ -162,7 +170,7 @@ bricht bei Kollision mit Hinweis ab.
 - Leeres MHD bleibt eine **echte Leerzelle**, kein leerer String
 - **Keine Formeln, keine Summenzeile** – alle Werte in JS vorberechnet
 - **Dateiname:** `Flop 15 Artikel NL {NL} {VLName} {YYYY-MM}.xlsx`
-- Export bricht ab, wenn dem Bezirk VL-Name oder NL fehlt (stünde sonst leer im Dateinamen)
+- Export bricht ab, wenn dem Profil VL-Name oder NL fehlt (stünde sonst leer im Dateinamen)
 - Download rein client-seitig über `Blob` + `URL.createObjectURL`
 
 ### Export-Regressionstest
@@ -182,8 +190,8 @@ Nach Änderungen an `export.js` oder am Datenmodell erneut laufen lassen. Import
   Artikels mergen, sonst verrutscht das Layout.
 - **Kein react-router, kein Drag&Drop-Package** – nur ExcelJS als zusätzliche Dependency,
   Reihenfolge-Änderung über Hoch/Runter-Buttons.
-- **Mehrere Bezirke exportieren getrennt** (eine Datei je Bezirk). Falls die NL alle
-  Bezirke in einer Datei will: Spalte A ist bereits so angelegt (VL-Name nur in der
+- **Mehrere Profile exportieren getrennt** (eine Datei je Profil). Falls die NL alle
+  Profile in einer Datei will: Spalte A ist bereits so angelegt (VL-Name nur in der
   ersten Zeile seines Blocks), Blöcke ließen sich untereinander hängen.
 
 ## Häufige Fehler & Fixes
