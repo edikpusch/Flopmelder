@@ -293,31 +293,26 @@ export function createMeldung(monat, profileId) {
   return meldung
 }
 
-// Vormonat als Vorlage: liefert nur die MHD-Werte des Vormonats (gleicher Bezirk).
-// Mengen werden bewusst NICHT übernommen.
-export function getVormonatVorlage(monat, profileId) {
-  const [jahr, monatNr] = monat.split('-').map(Number)
-  let vJahr = jahr
-  let vMonat = monatNr - 1
-  if (vMonat < 1) {
-    vMonat = 12
-    vJahr -= 1
-  }
-  const vormonatStr = `${vJahr}-${String(vMonat).padStart(2, '0')}`
+// "2026-01" -> "2025-12"
+export function vorherigerMonat(monat) {
+  const [jahr, monatNr] = String(monat || '').split('-').map(Number)
+  if (!jahr || !monatNr) return null
+  const vJahr = monatNr === 1 ? jahr - 1 : jahr
+  const vMonat = monatNr === 1 ? 12 : monatNr - 1
+  return `${vJahr}-${String(vMonat).padStart(2, '0')}`
+}
+
+// MHD desselben Artikels in derselben Filiale aus dem Vormonat.
+// Bewusst STRIKT der Vormonat: fehlt er, gibt es nichts zu übernehmen (auch wenn
+// zwei Monate vorher Werte lägen). Mengen werden nie übernommen.
+export function getVormonatMhd(monat, profileId, filialeId, artikelId) {
+  const vormonatStr = vorherigerMonat(monat)
+  if (!vormonatStr) return null
   const vormonat = getMeldungen()
     .filter((m) => m.monat === vormonatStr && m.profileId === profileId)
     .sort((a, b) => new Date(b.erstelltAm) - new Date(a.erstelltAm))[0]
-  if (!vormonat) return null
-
-  const mhdWerte = {}
-  Object.entries(vormonat.eintraege || {}).forEach(([filialeId, artikelMap]) => {
-    const proFiliale = {}
-    Object.entries(artikelMap || {}).forEach(([artikelId, val]) => {
-      if (val?.mhd) proFiliale[artikelId] = val.mhd
-    })
-    if (Object.keys(proFiliale).length) mhdWerte[filialeId] = proFiliale
-  })
-  return { monat: vormonatStr, mhdWerte }
+  const mhd = vormonat?.eintraege?.[filialeId]?.[artikelId]?.mhd
+  return mhd ? { monat: vormonatStr, mhd } : null
 }
 
 // --- Abgeleiteter Status (nicht gespeichert, immer berechnet) ---

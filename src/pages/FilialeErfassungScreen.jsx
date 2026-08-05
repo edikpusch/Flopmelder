@@ -6,6 +6,7 @@ import {
   getProfiles,
   getArtikel,
   istArtikelErledigt,
+  getVormonatMhd,
 } from '../store.js'
 
 const MENGE_PRESETS = [0, 0.5, 1, 1.5, 2, 2.5]
@@ -74,7 +75,6 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     return idx === -1 ? 0 : idx
   })
 
-  const [customOpen, setCustomOpen] = useState(false)
   const [customValue, setCustomValue] = useState('')
   const [mhdModus, setMhdModus] = useState(() => {
     const initial = {}
@@ -185,7 +185,7 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
 
   function goTo(index) {
     const clamped = Math.max(0, Math.min(index, anzahlGesamt - 1))
-    setCustomOpen(false)
+    setCustomValue('')
     setCurrentIndex(clamped)
     mutateMeldung((m) => ({
       ...m,
@@ -207,20 +207,24 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   // erfasst=true markiert den Artikel als bewusst entschieden - auch bei Menge 0.
   function chooseMenge(value) {
     updateEintrag(artikel.id, { menge: value, erfasst: true })
-    setCustomOpen(false)
+    setCustomValue('')
     if (currentIndex < anzahlGesamt - 1) {
       goNext()
     }
   }
 
-  function openCustom() {
-    const aktuelleMenge = getEintrag(artikel.id).menge
-    setCustomValue(aktuelleMenge ? formatMenge(aktuelleMenge) : '')
-    setCustomOpen(true)
+  // "OK"/Enter im freien Feld verhält sich wie ein Preset-Tap
+  function submitCustom() {
+    if (!customValue.trim()) return
+    chooseMenge(parseGermanNumber(customValue))
   }
 
-  function submitCustom() {
-    chooseMenge(parseGermanNumber(customValue))
+  // Übernimmt das MHD des Vormonats; die Menge bleibt bewusst unangetastet,
+  // der Artikel gilt dadurch NICHT als erfasst.
+  function vormonatUebernehmen() {
+    if (!vormonat) return
+    setMhd(artikel.id, vormonat.mhd)
+    setMhdModus((prev) => ({ ...prev, [artikel.id]: mhdModusAusWert(vormonat.mhd) }))
   }
 
   function zurueckZurUebersicht() {
@@ -245,6 +249,10 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
   const isPreset = MENGE_PRESETS.includes(menge)
   const istLetzterArtikel = currentIndex === anzahlGesamt - 1
   const erledigteArtikel = artikelListe.filter((a) => istArtikelErledigt(getEintrag(a.id)))
+  const vormonat = getVormonatMhd(meldung.monat, meldung.profileId, filialeId, artikel.id)
+  // Freies Feld zeigt den Wert nur, wenn er kein Preset ist (z.B. 4,5)
+  const customAnzeige =
+    customValue || (istErfasst && !isPreset && menge > 0 ? formatMenge(menge) : '')
 
   return (
     <div className="screen">
@@ -253,10 +261,9 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
           ← Zurück
         </button>
         <h1>Filiale {filiale ? filiale.nummer : ''}</h1>
-      </div>
-
-      <div className="progress">
-        Artikel {currentIndex + 1} / {anzahlGesamt} · {erledigteArtikel.length} erfasst
+        <span className="header-meta">
+          {currentIndex + 1}/{anzahlGesamt} · {erledigteArtikel.length} erfasst
+        </span>
       </div>
 
       <div className="artikel-chips">
@@ -308,6 +315,12 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
           />
         </div>
 
+        {vormonat && (
+          <button type="button" className="vormonat-btn" onClick={vormonatUebernehmen}>
+            ↩ Vormonat übernehmen: {vormonat.mhd}
+          </button>
+        )}
+
         <div className="menge-buttons">
           {MENGE_PRESETS.map((preset) => (
             <button
@@ -318,32 +331,23 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
               {formatMenge(preset)}
             </button>
           ))}
-          <button
-            className={`menge-btn custom ${istErfasst && !isPreset ? 'active' : ''}`}
-            onClick={openCustom}
-          >
-            {istErfasst && !isPreset ? formatMenge(menge) : 'Eigene Eingabe'}
-          </button>
         </div>
 
-        {customOpen && (
-          <div className="custom-menge-row">
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="z.B. 3 oder 4,5"
-              value={customValue}
-              onChange={(e) => setCustomValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') submitCustom()
-              }}
-              autoFocus
-            />
-            <button className="custom-ok-btn" onClick={submitCustom}>
-              OK
-            </button>
-          </div>
-        )}
+        <div className={`custom-menge-row ${istErfasst && !isPreset ? 'active' : ''}`}>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="andere Menge"
+            value={customAnzeige}
+            onChange={(e) => setCustomValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submitCustom()
+            }}
+          />
+          <button className="custom-ok-btn" onClick={submitCustom}>
+            OK
+          </button>
+        </div>
 
         {!istErfasst && (
           <div className="muted" style={{ marginTop: 10 }}>

@@ -1,11 +1,8 @@
-import { useRef, useState } from 'react'
 import { useNav } from '../NavContext.jsx'
 import {
   getMeldung,
-  saveMeldung,
   getArtikel,
   getProfiles,
-  getVormonatVorlage,
   countErledigt,
   getFilialeStatus,
   profilLabel,
@@ -15,8 +12,9 @@ import { exportMeldung } from '../export.js'
 
 export default function MeldungScreen({ meldungId }) {
   const { navigate } = useNav()
-  const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
-  const meldungRef = useRef(meldung)
+  // Dieser Screen ändert nichts an der Meldung - er wird bei jeder Navigation neu
+  // gemountet und liest deshalb einfach den aktuellen Stand.
+  const meldung = getMeldung(meldungId)
   const artikelListe = getArtikel()
 
   if (!meldung) {
@@ -35,50 +33,9 @@ export default function MeldungScreen({ meldungId }) {
   const profil = getProfiles().find((p) => p.id === meldung.profileId) || null
   const filialen = profil?.filialen || []
 
-  function mutateMeldung(mutator) {
-    const next = mutator(meldungRef.current)
-    meldungRef.current = next
-    setMeldung(next)
-    saveMeldung(next)
-    return next
-  }
-
   const fertigCount = filialen.filter(
     (f) => getFilialeStatus(meldung, f.id, artikelListe) === 'fertig'
   ).length
-
-  // Bewusste Option: standardmäßig startet jeder Monat leer. Übernommen werden
-  // nur MHD-Werte in noch leere Felder - Mengen niemals, die gelten nur für ihren Monat.
-  function vormonatLaden() {
-    const vorlage = getVormonatVorlage(meldung.monat, meldung.profileId)
-    if (!vorlage) {
-      alert('Keine Meldung aus dem Vormonat für dieses Profil gefunden.')
-      return
-    }
-
-    let gefuellt = 0
-    mutateMeldung((m) => {
-      const eintraege = { ...(m.eintraege || {}) }
-      Object.entries(vorlage.mhdWerte).forEach(([filialeId, proFiliale]) => {
-        const bisher = { ...(eintraege[filialeId] || {}) }
-        Object.entries(proFiliale).forEach(([artikelId, mhd]) => {
-          const eintrag = bisher[artikelId]
-          if (eintrag?.mhd) return // nichts überschreiben
-          bisher[artikelId] = { menge: 0, ...(eintrag || {}), mhd }
-          gefuellt++
-        })
-        eintraege[filialeId] = bisher
-      })
-      return { ...m, eintraege }
-    })
-
-    alert(
-      gefuellt > 0
-        ? `${gefuellt} MHD-Werte aus ${monatLabel(vorlage.monat)} übernommen. ` +
-            'Mengen bleiben leer und müssen neu erfasst werden.'
-        : `Aus ${monatLabel(vorlage.monat)} gab es nichts zu übernehmen.`
-    )
-  }
 
   async function handleExport() {
     if (!filialen.length) {
@@ -119,10 +76,6 @@ export default function MeldungScreen({ meldungId }) {
       <div className="progress">
         {fertigCount} / {filialen.length} Filialen vollständig
       </div>
-
-      <button className="btn secondary" onClick={vormonatLaden}>
-        MHD aus Vormonat übernehmen
-      </button>
 
       {filialen.length === 0 && (
         <div className="warning-box">

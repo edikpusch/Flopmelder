@@ -17,7 +17,7 @@ React PWA für Verkaufsleiter (VL) zur monatlichen Meldung der 15 "Flop"-Artikel
 ```
 src/
   pages/
-    HomeScreen.jsx              ← Start: aktives Profil + Meldung starten / Archiv / Einstellungen
+    HomeScreen.jsx              ← Start: aktives Profil + Monatswahl / Archiv / Einstellungen
     EinstellungenScreen.jsx     ← Profile, Filialen des Profils, globale Flop-15-Liste
     MeldungScreen.jsx           ← Filialen-Checkliste einer Meldung
     FilialeErfassungScreen.jsx  ← Wizard: 15 Artikel einzeln für 1 Filiale
@@ -126,21 +126,28 @@ dessen Zustand pro `artikelId` im `mhdModus`-State liegt:
 - Der native Datepicker setzt den Modus immer auf `tag` zurück
 
 ### Menge
-Presets in 0,5er-Schritten: `0 / 0,5 / 1 / 1,5 / 2 / 2,5` plus "Eigene Eingabe".
-Letztere öffnet ein Zahlenfeld (`inputMode="decimal"`, autofokussiert) für alles darüber;
-"OK" bzw. Enter verhält sich wie ein normaler Mengen-Tap, springt also ebenfalls zum
-nächsten Artikel. Ist ein Nicht-Preset gesetzt, zeigt der Button den Wert statt der
-Beschriftung.
+Presets in 0,5er-Schritten: `0 / 0,5 / 1 / 1,5 / 2 / 2,5` als **3×2-Raster**, darunter
+ein **fest sichtbares** Feld für alles darüber (`inputMode="decimal"`, Platzhalter
+"andere Menge"). "OK" und Enter verhalten sich wie ein Preset-Tap: speichern und zum
+nächsten Artikel springen. Das Feld bekommt bewusst **keinen** Autofokus – der gehört dem
+MHD-Feld. Ein Nicht-Preset-Wert (z.B. 4,5) steht im Feld und ist hervorgehoben.
 
-**Layout ist bewusst ein 4-Spalten-Raster** (`.menge-buttons`), nicht eine Reihe: sieben
-Buttons nebeneinander wären auf einem 375px-Handy ~44px breit und kaum zu treffen. So
-sind es 71×48px, die "Eigene Eingabe" spannt über zwei Spalten.
-
-**Aktiv-Markierung nur wenn `erfasst`:** Ohne bewusste Wahl darf kein Button hervorgehoben
-sein – sonst sieht ein unberührter Artikel so aus, als wäre die 0 bereits gewählt worden
-(`istErfasst && menge === preset`).
+**Aktiv-Markierung nur wenn `erfasst`:** Ohne bewusste Wahl darf nichts hervorgehoben
+sein – sonst sieht ein unberührter Artikel so aus, als wäre die 0 bereits gewählt worden.
 
 Das MHD-Feld ist **immer sichtbar**, nicht an Menge > 0 gekoppelt.
+
+### Platz auf dem Handy (wichtig beim Umbauen des Wizards)
+Das MHD-Feld fokussiert sich beim Betreten eines Artikels selbst, die Tastatur ist also
+offen, während man die Menge wählt. Auf Android verkleinert sie den Viewport – die
+Menge-Buttons müssen trotzdem erreichbar bleiben.
+- Der Fortschritt sitzt deshalb in der **Kopfzeile** (`.header-meta`), nicht in einer
+  eigenen Zeile
+- `@media (max-height: 460px)` in `index.css` rückt alles Umgebende zusammen. Die
+  **Trefferflächen der Buttons bleiben dabei bei 46px** – sie werden nie verkleinert
+- Gemessen: bei 360×370 (kleines Handy, Tastatur offen) sind beide Preset-Zeilen
+  vollständig sichtbar; das freie Mengenfeld liegt knapp darunter und wird beim Antippen
+  vom Browser selbst ins Bild gescrollt
 
 ### Stammdaten-Änderungen (bewusste Entscheidung: immer aktuell)
 Meldungen frieren ihre Stammdaten **nicht** ein – ein Nachdruck aus dem Archiv nutzt die
@@ -153,20 +160,28 @@ heutige Filial-/Artikelliste. Damit das nicht in Datenverlust endet:
 - Meldung-Screens lesen die Filialen aus **`meldung.profileId`**, nicht aus dem aktiven
   Profil – sonst zeigt eine Archiv-Meldung fremde Filialen
 
-### Jeder Monat ist eine eigene, leere Meldung
-Der Monat gehört **fest** zur Meldung und ist nachträglich **nicht änderbar** (früher gab
-es ein `<input type="month">` im MeldungScreen – beim Umstellen wanderten die Eingaben
-mit, was "jeder Monat ist eine neue Eingabe" widersprach).
-- Der Startbildschirm-Button arbeitet immer auf dem **laufenden** Monat und beschriftet
-  sich je nach Lage mit "starten" oder "fortsetzen"
-- `findMeldung(profileId, monat)` sorgt dafür, dass es pro Monat und Profil genau eine
-  Meldung gibt: existiert sie, wird sie fortgesetzt statt eine zweite anzulegen
+### Monat: beim Start wählbar, danach fest
+Der Monat wird **auf dem Startbildschirm** gewählt (`<input type="month">`, vorbelegt mit
+dem laufenden Monat) und gehört danach **fest** zur Meldung. Im MeldungScreen gibt es
+bewusst kein Monatsfeld mehr – beim Umstellen wanderten dort früher die Eingaben mit, was
+"jeder Monat ist eine neue Eingabe" widersprach.
+- `findMeldung(profileId, monat)` sorgt für genau eine Meldung pro Monat und Profil:
+  existiert sie, beschriftet sich der Button mit "fortsetzen" statt "starten" und öffnet sie
 - Ein neuer Monat startet damit garantiert leer; alle MHDs werden neu erfasst
+- Über die Monatswahl sind auch Nachmeldungen für vergangene Monate möglich
 
-**Ausnahme auf Wunsch:** "MHD aus Vormonat übernehmen" (`getVormonatVorlage` →
-`vormonatLaden`) füllt **nur leere** MHD-Felder aus dem Vormonat desselben Profils.
-Mengen werden **nie** übernommen und bereits erfasste Werte nie überschrieben – die
-Artikel gelten dadurch auch nicht als erfasst (`erfasst` wird nicht gesetzt).
+### MHD aus dem Vormonat übernehmen – pro Artikel
+`getVormonatMhd(monat, profileId, filialeId, artikelId)` liefert das MHD **desselben**
+Artikels in **derselben** Filiale aus dem Vormonat. Im Wizard erscheint daraufhin unter
+der MHD-Zeile ein Button, der den Wert direkt anzeigt ("↩ Vormonat übernehmen: 12.11.2026")
+– man sieht vor dem Tippen, was kommt. Gibt es keinen Wert, fehlt der Button ganz.
+
+- **Strikt der Vormonat** (`vorherigerMonat()`): fehlt er, wird nichts angeboten, auch
+  wenn zwei Monate vorher Werte lägen
+- Übernimmt **nur** das MHD und setzt den Tag/Monat-Modus passend; die Menge bleibt
+  unberührt, der Artikel gilt dadurch **nicht** als erfasst
+- Den früheren Sammel-Button auf der Filialübersicht (`getVormonatVorlage`) gibt es nicht
+  mehr – er befüllte pauschal alle Filialen auf einmal
 
 ## XLSX-Export (export.js)
 `exportMeldung(meldung, filialen, profil)` – VL-Name und NL kommen aus dem **Profil**.

@@ -29,8 +29,8 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState(() => getProfiles())
   const [aktiv, setAktiv] = useState(() => getActiveProfile())
 
-  const monat = currentMonat()
-  const laufende = aktiv ? findMeldung(aktiv.id, monat) : null
+  const [monat, setMonat] = useState(currentMonat())
+  const vorhandene = aktiv && monat ? findMeldung(aktiv.id, monat) : null
 
   function wechsle(id) {
     setActiveProfileId(id)
@@ -38,11 +38,11 @@ export default function HomeScreen() {
     setProfile(getProfiles())
   }
 
-  // Jeder Monat ist eine eigene Meldung. Existiert die des laufenden Monats
+  // Jeder Monat ist eine eigene Meldung. Existiert die des gewählten Monats
   // schon, wird sie fortgesetzt statt eine zweite anzulegen.
-  function neueMeldung() {
-    if (!aktiv) return
-    const meldung = laufende || createMeldung(monat, aktiv.id)
+  function meldungOeffnen() {
+    if (!aktiv || !monat) return
+    const meldung = vorhandene || createMeldung(monat, aktiv.id)
     navigate('meldung', { meldungId: meldung.id })
   }
 
@@ -83,8 +83,27 @@ export default function HomeScreen() {
         </div>
       )}
 
-      <button className="btn" onClick={neueMeldung} disabled={!aktiv}>
-        {laufende ? `Meldung ${monatLabel(monat)} fortsetzen` : `Meldung ${monatLabel(monat)} starten`}
+      {aktiv && (
+        <div className="card">
+          <div className="muted" style={{ marginBottom: 6 }}>Monat der Erfassung</div>
+          <input
+            type="month"
+            value={monat}
+            onChange={(e) => setMonat(e.target.value)}
+            style={{ width: '100%', padding: 12, fontSize: 16, borderRadius: 10, border: '1px solid #ccc' }}
+          />
+          <div className="muted" style={{ marginTop: 8 }}>
+            {vorhandene
+              ? 'Für diesen Monat gibt es bereits eine Meldung – sie wird fortgesetzt.'
+              : 'Neuer Monat: alle MHDs und Mengen werden neu erfasst.'}
+          </div>
+        </div>
+      )}
+
+      <button className="btn" onClick={meldungOeffnen} disabled={!aktiv || !monat}>
+        {monat
+          ? `Meldung ${monatLabel(monat)} ${vorhandene ? 'fortsetzen' : 'starten'}`
+          : 'Monat wählen'}
       </button>
       <button className="btn secondary" onClick={() => navigate('archiv')}>
         Archiv
