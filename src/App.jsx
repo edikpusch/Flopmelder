@@ -16,10 +16,15 @@ function Screens() {
     case 'meldung':
       return <MeldungScreen meldungId={route.params.meldungId} />
     case 'filiale':
+      // key erzwingt einen frischen Mount je Filiale. Ohne ihn behält React beim
+      // Wechsel über "Nächste Filiale" dieselbe Instanz - der Artikel-Index und der
+      // Tag/Monat-Modus der vorherigen Filiale blieben dann stehen.
       return (
         <FilialeErfassungScreen
+          key={route.params.filialeId}
           meldungId={route.params.meldungId}
           filialeId={route.params.filialeId}
+          startIndex={route.params.startIndex}
         />
       )
     case 'archiv':

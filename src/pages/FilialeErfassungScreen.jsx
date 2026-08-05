@@ -56,15 +56,20 @@ function mhdModusAusWert(mhd) {
   return punkte === 1 ? 'monat' : 'tag'
 }
 
-export default function FilialeErfassungScreen({ meldungId, filialeId }) {
+export default function FilialeErfassungScreen({ meldungId, filialeId, startIndex }) {
   const { navigate } = useNav()
   const [meldung, setMeldung] = useState(() => getMeldung(meldungId))
   const meldungRef = useRef(meldung)
   const artikelListe = getArtikel()
 
   // Setzt beim erneuten Öffnen genau dort fort, wo zuletzt aufgehört wurde
-  // (nicht "erster Artikel ohne Menge", da 0 auch bewusst gewählt sein kann)
+  // (nicht "erster Artikel ohne Menge", da 0 auch bewusst gewählt sein kann).
+  // Ausnahme: kommt man über "Nächste Filiale", gibt startIndex den Einstieg vor -
+  // eine neue Filiale beginnt dann immer beim ersten Artikel.
   const [currentIndex, setCurrentIndex] = useState(() => {
+    if (Number.isInteger(startIndex) && startIndex >= 0 && startIndex < artikelListe.length) {
+      return startIndex
+    }
     const letzte = meldung?.filialeLastIndex?.[filialeId]
     if (Number.isInteger(letzte) && letzte >= 0 && letzte < artikelListe.length) {
       return letzte
@@ -235,7 +240,9 @@ export default function FilialeErfassungScreen({ meldungId, filialeId }) {
     const idx = filialen.findIndex((f) => f.id === filialeId)
     const naechste = filialen[idx + 1]
     if (naechste) {
-      navigate('filiale', { meldungId: meldung.id, filialeId: naechste.id })
+      // Die nächste Filiale wird von vorne durchgegangen, nicht an der zuletzt
+      // angesehenen Stelle fortgesetzt.
+      navigate('filiale', { meldungId: meldung.id, filialeId: naechste.id, startIndex: 0 })
     } else {
       navigate('meldung', { meldungId: meldung.id })
     }

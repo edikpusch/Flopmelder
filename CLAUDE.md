@@ -107,8 +107,18 @@ Ein Artikel nach dem anderen, nicht alle 15 als lange Liste:
 - Der Fortschritt steht nur in der Kopfzeile und in den Chips – eine gelbe Box mit den
   offenen Artikelnummern gab es kurzzeitig, sie wurde auf Wunsch wieder entfernt
 - **Resume-Position:** `meldung.filialeLastIndex[filialeId]` wird bei jeder Navigation
-  (`goTo`) geschrieben. Beim erneuten Öffnen wird **dort** fortgesetzt, nicht beim
-  "ersten Artikel ohne Menge" – Menge 0 kann bewusst gewählt sein
+  (`goTo`) geschrieben. Beim Öffnen **über die Filialübersicht** wird dort fortgesetzt,
+  nicht beim "ersten Artikel ohne Menge" – Menge 0 kann bewusst gewählt sein
+- **"Nächste Filiale ›" beginnt dagegen immer bei Artikel 1** (`startIndex: 0` als
+  Route-Parameter). Man geht die neue Filiale von vorne durch, statt an einer alten
+  Stelle einzusteigen
+
+### App.jsx: `key` auf dem Erfassungs-Screen ist Pflicht
+`<FilialeErfassungScreen key={route.params.filialeId} … />` – **nicht entfernen.**
+Ohne den Key sieht React beim Filialwechsel denselben Komponententyp an derselben Stelle
+und behält die Instanz. Die `useState`-Initialisierer laufen dann nicht erneut: Der
+Artikel-Index blieb stehen (nach "Nächste Filiale" landete man auf Artikel 15 der neuen
+Filiale) und der `mhdModus` der vorherigen Filiale galt weiter.
 
 ### MHD-Feld
 Erlaubte Formate: `TT.MM.JJJJ`, `TT.MM.JJ`, `MM.JJJJ`, `MM.JJ` – **nie** als echtes Datum
